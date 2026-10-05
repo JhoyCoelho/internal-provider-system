@@ -1,5 +1,6 @@
 import './globals.css';
 import type { Metadata } from 'next';
+import { PlatformThemeProvider } from './providers/platform-theme-provider';
 
 export const metadata: Metadata = {
   title: 'Sistema Interno ISP',
@@ -10,7 +11,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="pt-BR">
       <head><meta charSet="utf-8" /></head>
-      <body>{children}</body>
+      <body><PlatformThemeProvider>{children}</PlatformThemeProvider></body>
     </html>
   );
 }

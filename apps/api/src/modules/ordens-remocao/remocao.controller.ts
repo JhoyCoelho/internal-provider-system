@@ -1,9 +1,9 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
-import { addObservation, assignTechnician, createOrder, getOrderById, listOrders, updateOrderStatus } from './remocao.service.js';
+import { addObservation, assignTechnician, createOrder, deleteRemovalOrder, getOrderById, listOrders, updateOrderStatus } from './remocao.service.js';
 
 const querySchema = z.object({
-  status: z.enum(['ABERTO', 'ROTEIRIZADO', 'CONCLUIDO', 'FALHA_TENTATIVA']).optional(),
+  status: z.enum(['ABERTO', 'ROTEIRIZADO', 'CONCLUIDO', 'FALHA_TENTATIVA', 'EM_OBSERVACAO']).optional(),
   clienteNome: z.string().optional(), endereco: z.string().optional(), numero: z.string().optional(),
   bairro: z.string().optional(), pontoReferencia: z.string().optional(), regiao: z.string().optional(), tecnicoId: z.string().uuid().optional(),
 });
@@ -14,7 +14,7 @@ const createOrderSchema = z.object({
   pontoReferencia: z.string().min(2, 'Ponto de referência obrigatório.'), localizacao: z.string().min(2, 'Localização obrigatória.'),
   regiao: z.string().min(2, 'Região inválida.').optional(), equipamentoSerial: z.string().optional().nullable(),
   fotoFachadaUrl: z.string().optional().nullable(), telefoneContato: z.string().optional().nullable(), tecnicoId: z.string().uuid().optional().nullable(),
-  status: z.enum(['ABERTO', 'ROTEIRIZADO', 'CONCLUIDO', 'FALHA_TENTATIVA']).optional(),
+  status: z.enum(['ABERTO', 'ROTEIRIZADO', 'CONCLUIDO', 'FALHA_TENTATIVA', 'EM_OBSERVACAO']).optional(),
 }).superRefine((data, context) => {
   if (data.telefoneContato && data.telefoneContato.replace(/\D/g, '').length !== 11) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['telefoneContato'], message: 'Telefone deve conter 11 dígitos.' });
@@ -46,6 +46,15 @@ export async function getOrderController(req: Request, res: Response) {
     const order = await getOrderById(req.params.id);
     return order ? res.status(200).json(order) : res.status(404).json({ message: 'Remoção não encontrada.' });
   } catch { return res.status(500).json({ message: 'Erro ao buscar remoção.' }); }
+}
+
+export async function deleteOrderController(req: Request, res: Response) {
+  try {
+    const deleted = await deleteRemovalOrder(req.params.id);
+    return deleted ? res.status(204).send() : res.status(404).json({ message: 'Remoção não encontrada.' });
+  } catch {
+    return res.status(500).json({ message: 'Erro ao excluir remoção.' });
+  }
 }
 
 export async function createOrderController(req: Request, res: Response) {

@@ -39,9 +39,13 @@ export async function authenticateToken(req: Request, res: Response, next: NextF
   }
 
   if (!user) return res.status(401).json({ message: 'Sessão inválida ou usuário desativado.' });
+  if (user.passwordChangedAt && payload.passwordVersion !== user.passwordChangedAt.getTime()) {
+    return res.status(401).json({ message: 'A senha foi alterada. Entre novamente.' });
+  }
 
   req.user = {
     id: user.id,
+    nome: user.nome,
     email: user.email,
     roles: user.roles.map((relation) => String(relation.perfil.code)),
     permissions: user.roles.flatMap((relation) => relation.perfil.permissoes.map((item) => String(item.permissao.code))),

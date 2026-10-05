@@ -23,6 +23,20 @@ const permissions = [
 
 const rolePermissions: Record<RoleCode, PermissionCode[]> = {
   [RoleCode.MASTER_ADMIN]: Object.values(PermissionCode),
+  [RoleCode.ADMIN]: [
+    PermissionCode.USERS_READ,
+    PermissionCode.REPORTS_READ,
+    PermissionCode.AUDIT_READ,
+    PermissionCode.ORDERS_READ,
+    PermissionCode.ORDERS_WRITE,
+    PermissionCode.ORDERS_STATUS_WRITE,
+    PermissionCode.ORDERS_NOTE_WRITE,
+    PermissionCode.CHECKLIST_READ,
+    PermissionCode.CHECKLIST_WRITE,
+    PermissionCode.APPROVE_LATE_CHECKLIST,
+    PermissionCode.CASH_READ,
+    PermissionCode.APPROVE_CLOSURE,
+  ],
   [RoleCode.SUPERVISOR]: [
     PermissionCode.AUDIT_READ,
     PermissionCode.ORDERS_READ,
@@ -118,13 +132,12 @@ async function main() {
     const passwordHash = await bcrypt.hash(bootstrapPassword, 12);
     const admin = await prisma.usuario.upsert({
       where: { email: bootstrapEmail },
-      update: {},
+      update: { passwordHash, status: 'ATIVO' },
       create: { email: bootstrapEmail, nome: 'Administrador do Sistema', passwordHash, status: 'ATIVO' },
     });
-    await prisma.usuarioPerfil.upsert({
-      where: { usuarioId_perfilId: { usuarioId: admin.id, perfilId: adminRole.id } },
-      update: {},
-      create: { usuarioId: admin.id, perfilId: adminRole.id },
+    await prisma.$transaction(async (transaction) => {
+      await transaction.usuarioPerfil.deleteMany({ where: { usuarioId: admin.id } });
+      await transaction.usuarioPerfil.create({ data: { usuarioId: admin.id, perfilId: adminRole.id } });
     });
     console.log('Administrador inicial configurado.');
   } else {

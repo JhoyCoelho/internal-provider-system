@@ -1,5 +1,6 @@
-import { Prisma, StatusOrdemRemocao, SubstatusFalha } from '@prisma/client';
+import { Prisma, StatusOrdemRemocao, StatusRotaRemocao, SubstatusFalha } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
+import { closeRoutesForOrder } from './rotas.service.js';
 
 export type CreateOrderInput = {
   clienteNome: string;
@@ -50,6 +51,35 @@ export async function getOrderById(id: string) {
   });
 }
 
+export async function deleteRemovalOrder(id: string) {
+  return prisma.$transaction(async (transaction) => {
+    const order = await transaction.ordemRemocao.findUnique({ where: { id }, select: { id: true } });
+    if (!order) return false;
+
+    const activeRouteIds = await transaction.rotaRemocaoParada.findMany({
+      where: { ordemId: id, rota: { status: StatusRotaRemocao.EM_ANDAMENTO } },
+      select: { rotaId: true },
+    });
+
+    await transaction.rotaRemocaoParada.deleteMany({ where: { ordemId: id } });
+    await transaction.ordemRemocao.delete({ where: { id } });
+
+    for (const { rotaId } of activeRouteIds) {
+      const unfinishedStops = await transaction.rotaRemocaoParada.count({
+        where: { rotaId, ordem: { status: StatusOrdemRemocao.ROTEIRIZADO } },
+      });
+      if (unfinishedStops === 0) {
+        await transaction.rotaRemocao.updateMany({
+          where: { id: rotaId, status: StatusRotaRemocao.EM_ANDAMENTO },
+          data: { status: StatusRotaRemocao.CONCLUIDA, completedAt: new Date() },
+        });
+      }
+    }
+
+    return true;
+  });
+}
+
 export async function createOrder(input: CreateOrderInput) {
   return prisma.ordemRemocao.create({
     data: {
@@ -91,6 +121,12 @@ export async function assignTechnician(orderId: string, tecnicoId: string) {
 export async function updateOrderStatus(orderId: string, payload: UpdateOrderStatusInput) {
   const order = await prisma.ordemRemocao.findUnique({ where: { id: orderId } });
   if (!order) throw new Error('Ordem de remoção não encontrada.');
+  if (order.status === StatusOrdemRemocao.EM_OBSERVACAO && payload.status !== StatusOrdemRemocao.CONCLUIDO) {
+    throw new Error('Esta ordem está em observação. O status só poderá mudar quando a remoção for concluída.');
+  }
+  if (order.status === StatusOrdemRemocao.CONCLUIDO && payload.status !== StatusOrdemRemocao.CONCLUIDO) {
+    throw new Error('Uma remoção concluída não pode voltar para outro status.');
+  }
 
   const fotoSerialUrl = payload.fotoSerialUrl ?? order.fotoSerialUrl;
   const fotoFachadaUrl = payload.fotoFachadaUrl ?? order.fotoFachadaUrl;
@@ -99,9 +135,16 @@ export async function updateOrderStatus(orderId: string, payload: UpdateOrderSta
   if (payload.status === StatusOrdemRemocao.CONCLUIDO && !fotoSerialUrl) throw new Error('A ordem concluída exige foto do roteador/serial.');
   if (payload.status === StatusOrdemRemocao.FALHA_TENTATIVA && (!substatusFalha || !fotoFachadaUrl)) throw new Error('A falha na tentativa exige substatus e foto da fachada.');
 
-  return prisma.ordemRemocao.update({
+  const tentativasFalha = order.tentativasFalha + (payload.status === StatusOrdemRemocao.FALHA_TENTATIVA ? 1 : 0);
+  const effectiveStatus = payload.status === StatusOrdemRemocao.FALHA_TENTATIVA && tentativasFalha >= 3
+    ? StatusOrdemRemocao.EM_OBSERVACAO
+    : payload.status;
+
+  const updated = await prisma.ordemRemocao.update({
     where: { id: orderId },
-    data: { status: payload.status, substatusFalha, fotoSerialUrl, fotoFachadaUrl },
+    data: { status: effectiveStatus, tentativasFalha, substatusFalha, fotoSerialUrl, fotoFachadaUrl },
     include: { tecnico: { select: { id: true, nome: true, email: true } } },
   });
+  await closeRoutesForOrder(orderId);
+  return updated;
 }

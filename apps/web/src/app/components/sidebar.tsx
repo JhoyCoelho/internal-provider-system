@@ -4,21 +4,24 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '../providers/auth-provider';
 
-const items: { href: string; label: string; permission?: string; disabled?: boolean }[] = [
+const items: { href: string; label: string; permission?: string; role?: string; disabled?: boolean }[] = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/dashboard/remocao', label: 'Remoção', permission: 'ORDERS_READ' },
   { href: '/dashboard/checklists', label: 'Checklists', permission: 'CHECKLIST_READ' },
   { href: '/dashboard/caixa', label: 'Caixa', permission: 'CASH_READ', disabled: true },
   { href: '/dashboard/auditoria', label: 'Auditoria', permission: 'AUDIT_READ' },
+  { href: '/dashboard/administracao', label: 'Administração', role: 'MASTER_ADMIN' },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
-  const visibleItems = items.filter((item) => !item.permission || user?.permissions.includes(item.permission));
+  const visibleItems = items.filter((item) =>
+    (!item.permission || user?.permissions.includes(item.permission))
+    && (!item.role || user?.roles.includes(item.role)));
 
   return (
-    <aside className="h-full w-full rounded-3xl border border-slate-200 bg-white p-4 shadow-soft">
+    <aside className="platform-surface h-full w-full rounded-3xl border border-slate-200 p-4 shadow-soft">
       <div className="mb-6 px-3 py-2">
         <h2 className="text-xl font-bold text-slate-800">Fyberlink</h2>
       </div>
@@ -39,7 +42,7 @@ export function Sidebar() {
                 href={item.href}
                 className={`flex items-center justify-between rounded-xl px-3 py-2.5 text-sm font-medium transition ${
                   active
-                    ? 'bg-brand-50 text-brand-700 ring-1 ring-brand-200'
+                    ? 'nav-accent bg-brand-50 text-brand-700 ring-1 ring-brand-200'
                     : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
               >
@@ -49,6 +52,11 @@ export function Sidebar() {
           );
         })}
       </nav>
+
+      <div className="mt-8 border-t border-slate-200 px-3 pt-4">
+        <p className="truncate text-sm font-semibold text-slate-800">{user?.nome}</p>
+        <p className="mt-1 truncate text-xs text-slate-500">{user?.roles.map((role) => role === 'MASTER_ADMIN' ? 'MASTER ADMIN' : role === 'TECNICO' ? 'TÉCNICO' : role.replaceAll('_', ' ')).join(', ')}</p>
+      </div>
 
       <button
         type="button"

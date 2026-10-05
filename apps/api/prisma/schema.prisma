@@ -13,6 +13,7 @@ datasource db {
 
 enum RoleCode {
   MASTER_ADMIN
+  ADMIN
   SUPERVISOR
   COORDENADOR
   DIRETORIA
@@ -44,6 +45,13 @@ enum StatusOrdemRemocao {
   ROTEIRIZADO
   CONCLUIDO
   FALHA_TENTATIVA
+  EM_OBSERVACAO
+}
+
+enum StatusRotaRemocao {
+  EM_ANDAMENTO
+  CONCLUIDA
+  CANCELADA
 }
 
 enum SubstatusFalha {
@@ -85,10 +93,22 @@ enum StatusUsuario {
   BLOQUEADO
 }
 
+model ConfiguracaoPlataforma {
+  id                Int      @id @default(1)
+  brandPrimary      String   @default("#1d4ed8") @map("brand_primary") @db.VarChar(7)
+  brandAccent       String   @default("#0f766e") @map("brand_accent") @db.VarChar(7)
+  pageBackground    String   @default("#f8fafc") @map("page_background") @db.VarChar(7)
+  surfaceBackground String   @default("#ffffff") @map("surface_background") @db.VarChar(7)
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@map("configuracao_plataforma")
+}
+
 model Usuario {
   id              String        @id @default(uuid()) @db.Uuid
   email           String        @unique @db.VarChar(160)
   passwordHash    String        @map("password_hash") @db.VarChar(255)
+  passwordChangedAt DateTime?   @map("password_changed_at")
   nome            String        @db.VarChar(160)
   telefone        String?       @db.VarChar(40)
   status          StatusUsuario @default(ATIVO)
@@ -98,6 +118,9 @@ model Usuario {
   roles           UsuarioPerfil[]
   ordensAtribuidas OrdemRemocao[] @relation("OrdemRemocaoTecnico")
   ordensCriadas   OrdemRemocao[] @relation("OrdemRemocaoCriador")
+  rotasRemocaoCriadas RotaRemocao[] @relation("RotaRemocaoCriador")
+  rotasRemocaoCanceladas RotaRemocao[] @relation("RotaRemocaoCanceladaPor")
+  rotasRemocaoTecnicoAnterior RotaRemocaoParada[] @relation("RotaRemocaoTecnicoAnterior")
   observacoesRemocao ObservacaoRemocao[]
   checklists      Checklist[]
   respostasResolvidas ChecklistResposta[] @relation("ChecklistRespostaResolucao")
@@ -165,6 +188,7 @@ model OrdemRemocao {
   equipamentoSerial   String?                    @map("equipamento_serial") @db.VarChar(120)
   telefoneContato     String?                    @map("telefone_contato") @db.VarChar(40)
   status              StatusOrdemRemocao         @default(ABERTO)
+  tentativasFalha     Int                        @default(0) @map("tentativas_falha")
   substatusFalha      SubstatusFalha?            @map("substatus_falha")
   fotoSerialUrl       String?                    @map("foto_serial_url") @db.Text
   fotoFachadaUrl      String?                    @map("foto_fachada_url") @db.Text
@@ -176,8 +200,47 @@ model OrdemRemocao {
   tecnico   Usuario? @relation("OrdemRemocaoTecnico", fields: [tecnicoId], references: [id])
   criadoPor Usuario? @relation("OrdemRemocaoCriador", fields: [criadoPorId], references: [id])
   observacoes ObservacaoRemocao[]
+  paradasRota RotaRemocaoParada[]
 
   @@map("ordens_remocao")
+}
+
+model RotaRemocao {
+  id          String            @id @default(uuid()) @db.Uuid
+  criadoPorId String            @map("criado_por_id") @db.Uuid
+  origem      String            @db.VarChar(64)
+  status      StatusRotaRemocao @default(EM_ANDAMENTO)
+  distanciaKm Float             @map("distancia_km")
+  createdAt   DateTime          @default(now()) @map("created_at")
+  completedAt DateTime?         @map("completed_at")
+  cancelledAt DateTime?         @map("cancelled_at")
+  cancelledById String?         @map("cancelled_by_id") @db.Uuid
+
+  criadoPor Usuario               @relation("RotaRemocaoCriador", fields: [criadoPorId], references: [id])
+  canceladaPor Usuario?           @relation("RotaRemocaoCanceladaPor", fields: [cancelledById], references: [id])
+  paradas   RotaRemocaoParada[]
+
+  @@index([criadoPorId, createdAt])
+  @@map("rotas_remocao")
+}
+
+model RotaRemocaoParada {
+  id        String   @id @default(uuid()) @db.Uuid
+  rotaId    String   @map("rota_id") @db.Uuid
+  ordemId   String   @map("ordem_id") @db.Uuid
+  sequencia Int
+  statusAnterior StatusOrdemRemocao @default(ABERTO) @map("status_anterior")
+  tecnicoAnteriorId String? @map("tecnico_anterior_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  rota  RotaRemocao  @relation(fields: [rotaId], references: [id], onDelete: Cascade)
+  ordem OrdemRemocao @relation(fields: [ordemId], references: [id], onDelete: Restrict)
+  tecnicoAnterior Usuario? @relation("RotaRemocaoTecnicoAnterior", fields: [tecnicoAnteriorId], references: [id], onDelete: SetNull)
+
+  @@unique([rotaId, ordemId])
+  @@unique([rotaId, sequencia])
+  @@index([ordemId])
+  @@map("rotas_remocao_paradas")
 }
 
 model ObservacaoRemocao {

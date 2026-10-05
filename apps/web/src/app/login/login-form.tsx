@@ -33,7 +33,7 @@ export function LoginForm() {
   return (
     <form className="space-y-5" onSubmit={handleSubmit}>
       <div>
-        <label htmlFor="email" className="mb-2 block text-sm font-medium text-slate-200">
+        <label htmlFor="email" className="mb-2 block text-sm font-medium text-slate-700">
           E-mail corporativo
         </label>
         <input
@@ -41,12 +41,12 @@ export function LoginForm() {
           type="email"
           value={email}
           onChange={(event) => setEmail(event.target.value)}
-          className="w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-white outline-none transition focus:border-blue-500"
+          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-slate-900 outline-none transition focus:border-brand-600"
         />
       </div>
 
       <div>
-        <label htmlFor="password" className="mb-2 block text-sm font-medium text-slate-200">
+        <label htmlFor="password" className="mb-2 block text-sm font-medium text-slate-700">
           Senha
         </label>
         <input
@@ -54,7 +54,7 @@ export function LoginForm() {
           type="password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
-          className="w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-3 text-white outline-none transition focus:border-blue-500"
+          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-slate-900 outline-none transition focus:border-brand-600"
         />
       </div>
 
@@ -63,7 +63,7 @@ export function LoginForm() {
       <button
         type="submit"
         disabled={loading}
-        className="w-full rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+        className="w-full rounded-xl bg-brand-600 px-4 py-3 font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {loading ? 'Entrando...' : 'Entrar'}
       </button>

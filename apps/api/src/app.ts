@@ -10,7 +10,10 @@ import checklistRoutes from './modules/checklists/checklist.routes.js';
 import caixaRoutes from './modules/caixa/caixa.routes.js';
 import auditoriaRoutes from './modules/auditoria/auditoria.routes.js';
 import dashboardRoutes from './modules/dashboard/dashboard.routes.js';
+import usersRoutes from './modules/usuarios/usuarios.routes.js';
+import { getPlatformThemeController, updatePlatformThemeController } from './modules/platform-theme/platform-theme.controller.js';
 import { authenticateToken } from './middleware/authMiddleware.js';
+import { requireRole } from './middleware/rbacMiddleware.js';
 import { env } from './config/env.js';
 import { prisma } from './lib/prisma.js';
 
@@ -60,7 +63,10 @@ export function createApp() {
   });
 
   app.use('/api/auth', authRoutes);
+  app.get('/api/platform-theme', getPlatformThemeController);
   app.use('/api', authenticateToken);
+  app.put('/api/platform-theme', requireRole('MASTER_ADMIN'), updatePlatformThemeController);
+  app.use('/api/admin/users', usersRoutes);
   app.use('/api/ordens-remocao', remocaoRoutes);
   app.use('/api/checklists', checklistRoutes);
   app.use('/api/caixa', caixaRoutes);

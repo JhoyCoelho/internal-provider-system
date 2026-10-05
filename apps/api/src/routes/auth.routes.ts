@@ -23,7 +23,7 @@ const loginRateLimit = rateLimit({
 });
 
 const loginSchema = z.object({
-  email: z.string().email('E-mail inválido.'),
+  email: z.string().trim().toLowerCase().email('E-mail inválido.'),
   password: z.string().min(env.NODE_ENV === 'production' ? 12 : 6, env.NODE_ENV === 'production' ? 'Senha deve conter pelo menos 12 caracteres.' : 'Senha inválida.')
     .refine((password) => Buffer.byteLength(password, 'utf8') <= 72, 'Senha excede o tamanho máximo aceito pelo algoritmo de hash.'),
 });
@@ -61,7 +61,13 @@ router.post('/login', loginRateLimit, async (req, res) => {
 
     const roles = user.roles.map((relation) => String(relation.perfil.code));
     const permissions = user.roles.flatMap((relation) => relation.perfil.permissoes.map((item) => String(item.permissao.code)));
-    const token = signToken({ sub: user.id, email: user.email, roles, permissions });
+    const token = signToken({
+      sub: user.id,
+      email: user.email,
+      roles,
+      permissions,
+      passwordVersion: user.passwordChangedAt?.getTime() ?? 0,
+    });
     const userPayload = { id: user.id, nome: user.nome, email: user.email, roles, permissions };
 
     res.cookie(sessionCookieName, token, { ...sessionCookieOptions, maxAge: 4 * 60 * 60 * 1000 });

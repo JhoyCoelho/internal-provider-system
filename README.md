@@ -86,12 +86,12 @@ Configure estas variáveis no serviço API:
 - `TRUST_PROXY=true` para que rate limiting registre o IP encaminhado pela Railway.
 - `PORT` é fornecida pela Railway; não fixe a porta de produção.
 
-### Bootstrap inicial (executar uma única vez)
+### Bootstrap inicial do MASTER ADMIN (executar uma única vez)
 
 Depois que PostgreSQL e API estiverem provisionados, adicione temporariamente ao serviço API:
 
-- `INITIAL_ADMIN_EMAIL`: e-mail real que será usado pelo administrador.
-- `INITIAL_ADMIN_PASSWORD`: senha aleatória com pelo menos 16 caracteres.
+- `INITIAL_ADMIN_EMAIL`: e-mail da conta MASTER ADMIN inicial.
+- `INITIAL_ADMIN_PASSWORD`: senha com pelo menos 16 caracteres e no máximo 72 bytes.
 
 Execute o seed uma única vez dentro do container da API, com as variáveis temporárias configuradas no serviço:
 
@@ -99,7 +99,7 @@ Execute o seed uma única vez dentro do container da API, com as variáveis temp
 railway ssh --service API -- npm --workspace apps/api run prisma:seed
 ```
 
-Use o nome real do serviço. Depois de confirmar o primeiro login, remova `INITIAL_ADMIN_EMAIL` e `INITIAL_ADMIN_PASSWORD` das variáveis Railway. O seed também cria perfis, permissões e templates; não o inclua no pre-deploy recorrente. Não grave os valores no repositório.
+Use o nome real do serviço. Configure os valores temporariamente no painel Railway, sem colocá-los em comandos versionados ou no repositório. Depois de confirmar o primeiro login, remova `INITIAL_ADMIN_EMAIL` e `INITIAL_ADMIN_PASSWORD` das variáveis Railway. Como a senha foi compartilhada durante o desenvolvimento, redefina-a após o primeiro acesso; a redefinição encerra as sessões anteriores. O seed também cria perfis, permissões e templates; não o inclua no pre-deploy recorrente.
 
 ### Criar colaboradores
 
@@ -110,6 +110,12 @@ railway ssh --service API -- npm --workspace apps/api run user:create
 ```
 
 Use o nome/ID real do serviço da API. Perfis aceitos: `MASTER_ADMIN`, `SUPERVISOR`, `COORDENADOR`, `DIRETORIA`, `TECNICO`, `FINANCEIRO`, `COMERCIAL` e `OPERADOR_CAIXA`. O comando não sobrescreve uma conta existente. Remova as quatro variáveis temporárias após a execução.
+
+### Administração pela plataforma
+
+Depois do bootstrap, use a seção **Administração** com a conta MASTER ADMIN para criar e editar usuários. A interface oferece os tipos `MASTER_ADMIN`, `ADMIN` e `TECNICO`; perfis operacionais legados permanecem no RBAC para compatibilidade e exigem escolha explícita de um dos três tipos antes de serem convertidos pela interface. Senhas novas devem ter pelo menos 16 caracteres e são armazenadas com bcrypt. A aplicação impede desativar ou rebaixar o último MASTER ADMIN ativo, e a redefinição de senha invalida as sessões anteriores.
+
+A aba **Cores da plataforma** permite ajustar cor principal, destaque, fundo e painéis com valores HEX `#RRGGBB`. O backend valida contraste e autoriza gravações somente para MASTER ADMIN. Alterações são compartilhadas e registradas na Auditoria; a consulta pública usada pela tela de login é somente leitura.
 
 ## Railway: serviço Web
 
@@ -138,3 +144,9 @@ Gere domínios públicos HTTPS para Web e API. O banco deve permanecer privado e
 5. Monitore logs, uso de banco, limite de uploads e custos de armazenamento/rede.
 
 As imagens de Remoção são comprimidas no navegador, mas ainda ficam armazenadas como Base64 no PostgreSQL. Para uso operacional com volume crescente, planeje armazenamento privado de objetos e mantenha no banco apenas a URL/chave do arquivo.
+
+## Rotas de Remoção
+
+A rota usa a lista atualmente filtrada de ordens abertas/roteirizadas e a origem GPS ou marcada pelo colaborador. A API ordena as paradas por distância geográfica (vizinho mais próximo com melhoria 2-opt), persiste o roteiro e permite reabri-lo pelo histórico. Cada etapa oferece navegação no Google Maps.
+
+A distância exibida é uma estimativa em linha geográfica; a sequência ainda não considera trânsito, mão de direção ou a malha real de ruas. Para otimização rodoviária global será necessário integrar um provedor de rotas (por exemplo, Google Routes, GraphHopper ou OpenRouteService), provisionar sua chave no serviço API e considerar custos/limites de uso. A aplicação atual não envia coordenadas dos clientes a um roteador externo.

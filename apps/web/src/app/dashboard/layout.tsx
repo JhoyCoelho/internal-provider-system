@@ -19,7 +19,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-2 sm:p-4 md:p-6">
+    <div className="dashboard-shell min-h-screen p-2 sm:p-4 md:p-6">
       <div className="mx-auto grid max-w-7xl gap-3 sm:gap-6 xl:grid-cols-[220px_1fr]">
         <Sidebar />
         <div className="min-w-0">{children}</div>
