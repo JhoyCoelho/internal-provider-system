@@ -1,0 +1,286 @@
+// prisma/schema.prisma
+// Esquema principal do banco para o MVP do sistema interno de ISP.
+// Chaves primárias em UUID v4 para facilitar sincronização futura com ERP/CRM.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleCode {
+  MASTER_ADMIN
+  SUPERVISOR
+  COORDENADOR
+  DIRETORIA
+  TECNICO
+  FINANCEIRO
+  COMERCIAL
+  OPERADOR_CAIXA
+}
+
+enum PermissionCode {
+  USERS_READ
+  USERS_WRITE
+  REPORTS_READ
+  AUDIT_READ
+  ORDERS_READ
+  ORDERS_WRITE
+  ORDERS_STATUS_WRITE
+  ORDERS_NOTE_WRITE
+  CHECKLIST_READ
+  CHECKLIST_WRITE
+  CASH_READ
+  CASH_WRITE
+  APPROVE_CLOSURE
+  APPROVE_LATE_CHECKLIST
+}
+
+enum StatusOrdemRemocao {
+  ABERTO
+  ROTEIRIZADO
+  CONCLUIDO
+  FALHA_TENTATIVA
+}
+
+enum SubstatusFalha {
+  CLIENTE_AUSENTE
+  RECUSA
+  MUDOU_SE
+  ENDERECO_NAO_LOCALIZADO
+}
+
+enum TipoRespostaChecklist {
+  OK
+  NAO_CONFORME
+  TEXTO
+}
+
+enum StatusChecklist {
+  PENDENTE
+  PREENCHIDO
+  EM_ATRASO
+  PENDENTE_APROVACAO
+  APROVADO
+  REPROVADO
+}
+
+enum JanelaChecklist {
+  INICIO_EXPEDIENTE
+  FIM_EXPEDIENTE
+}
+
+enum StatusMovimentoCaixa {
+  ABERTO
+  FECHADO
+  PENDENTE_APROVACAO
+}
+
+enum StatusUsuario {
+  ATIVO
+  INATIVO
+  BLOQUEADO
+}
+
+model Usuario {
+  id              String        @id @default(uuid()) @db.Uuid
+  email           String        @unique @db.VarChar(160)
+  passwordHash    String        @map("password_hash") @db.VarChar(255)
+  nome            String        @db.VarChar(160)
+  telefone        String?       @db.VarChar(40)
+  status          StatusUsuario @default(ATIVO)
+  ultimoLogin     DateTime?     @map("ultimo_login")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+  roles           UsuarioPerfil[]
+  ordensAtribuidas OrdemRemocao[] @relation("OrdemRemocaoTecnico")
+  ordensCriadas   OrdemRemocao[] @relation("OrdemRemocaoCriador")
+  observacoesRemocao ObservacaoRemocao[]
+  checklists      Checklist[]
+  respostasResolvidas ChecklistResposta[] @relation("ChecklistRespostaResolucao")
+  auditorias     LogAuditoria[] @relation("LogAuditoriaUsuario")
+  movimentosCaixa MovimentacaoCaixa[]
+
+  @@map("usuarios")
+}
+
+model Perfil {
+  id          String        @id @default(uuid()) @db.Uuid
+  code        RoleCode      @unique
+  nome        String        @db.VarChar(80)
+  descricao   String?       @db.Text
+  active      Boolean       @default(true)
+  createdAt   DateTime      @default(now()) @map("created_at")
+  usuarios    UsuarioPerfil[]
+  permissoes  PerfilPermissao[]
+
+  @@map("perfis")
+}
+
+model Permissao {
+  id          String        @id @default(uuid()) @db.Uuid
+  code        PermissionCode @unique
+  nome        String        @db.VarChar(120)
+  descricao   String?       @db.Text
+  createdAt   DateTime      @default(now()) @map("created_at")
+  perfis      PerfilPermissao[]
+
+  @@map("permissoes")
+}
+
+model UsuarioPerfil {
+  usuarioId String @map("usuario_id") @db.Uuid
+  perfilId  String @map("perfil_id") @db.Uuid
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  perfil  Perfil  @relation(fields: [perfilId], references: [id], onDelete: Cascade)
+
+  @@id([usuarioId, perfilId])
+  @@map("usuarios_perfis")
+}
+
+model PerfilPermissao {
+  perfilId    String @map("perfil_id") @db.Uuid
+  permissaoId String @map("permissao_id") @db.Uuid
+
+  perfil    Perfil    @relation(fields: [perfilId], references: [id], onDelete: Cascade)
+  permissao Permissao @relation(fields: [permissaoId], references: [id], onDelete: Cascade)
+
+  @@id([perfilId, permissaoId])
+  @@map("perfis_permissoes")
+}
+
+model OrdemRemocao {
+  id                  String                     @id @default(uuid()) @db.Uuid
+  clienteNome         String                     @map("cliente_nome") @db.VarChar(180)
+  endereco            String                     @db.VarChar(255)
+  numero              String                     @default("S/N") @db.VarChar(30)
+  bairro              String                     @db.VarChar(120)
+  pontoReferencia     String                     @default("Não informado") @map("ponto_referencia") @db.VarChar(255)
+  localizacao         String                     @default("Não informado") @db.VarChar(500)
+  regiao              String                     @db.VarChar(120)
+  equipamentoSerial   String?                    @map("equipamento_serial") @db.VarChar(120)
+  telefoneContato     String?                    @map("telefone_contato") @db.VarChar(40)
+  status              StatusOrdemRemocao         @default(ABERTO)
+  substatusFalha      SubstatusFalha?            @map("substatus_falha")
+  fotoSerialUrl       String?                    @map("foto_serial_url") @db.Text
+  fotoFachadaUrl      String?                    @map("foto_fachada_url") @db.Text
+  tecnicoId           String?                    @map("tecnico_id") @db.Uuid
+  criadoPorId         String?                    @map("criado_por_id") @db.Uuid
+  createdAt           DateTime                   @default(now()) @map("created_at")
+  updatedAt           DateTime                   @updatedAt @map("updated_at")
+
+  tecnico   Usuario? @relation("OrdemRemocaoTecnico", fields: [tecnicoId], references: [id])
+  criadoPor Usuario? @relation("OrdemRemocaoCriador", fields: [criadoPorId], references: [id])
+  observacoes ObservacaoRemocao[]
+
+  @@map("ordens_remocao")
+}
+
+model ObservacaoRemocao {
+  id        String      @id @default(uuid()) @db.Uuid
+  ordemId   String      @map("ordem_id") @db.Uuid
+  usuarioId String      @map("usuario_id") @db.Uuid
+  texto     String      @db.Text
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  ordem   OrdemRemocao @relation(fields: [ordemId], references: [id], onDelete: Cascade)
+  usuario Usuario      @relation(fields: [usuarioId], references: [id])
+
+  @@index([ordemId, createdAt])
+  @@map("observacoes_remocao")
+}
+
+model ChecklistTemplate {
+  id            String              @id @default(uuid()) @db.Uuid
+  categoria     String              @default("GERAL") @db.VarChar(40)
+  pergunta      String              @db.VarChar(255)
+  tipoResposta  TipoRespostaChecklist @map("tipo_resposta")
+  obrigatoria   Boolean             @default(true)
+  itemCritico   Boolean             @default(false) @map("item_critico")
+  ativo         Boolean             @default(true)
+  createdAt     DateTime            @default(now()) @map("created_at")
+  respostas     ChecklistResposta[]
+
+  @@map("checklist_templates")
+}
+
+model Checklist {
+  id                String           @id @default(uuid()) @db.Uuid
+  usuarioId         String           @map("usuario_id") @db.Uuid
+  categoria         String           @default("GERAL") @db.VarChar(40)
+  janela            JanelaChecklist?
+  dataAgenda        DateTime?        @map("data_agenda") @db.Date
+  dataPrevista      DateTime?        @map("data_prevista")
+  dataPreenchimento DateTime?        @map("data_preenchimento")
+  status            StatusChecklist  @default(PENDENTE)
+  justificativaAtraso String?         @map("justificativa_atraso") @db.Text
+  assinaturaData    String?           @map("assinatura_data") @db.Text
+  aprovadoPorId     String?          @map("aprovado_por_id") @db.Uuid
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+
+  usuario         Usuario             @relation(fields: [usuarioId], references: [id])
+  respostas       ChecklistResposta[]
+
+  @@map("checklists")
+  @@unique([usuarioId, categoria, janela, dataAgenda])
+}
+
+model ChecklistResposta {
+  id                   String              @id @default(uuid()) @db.Uuid
+  checklistId          String              @map("checklist_id") @db.Uuid
+  templateId           String              @map("template_id") @db.Uuid
+  valorTexto           String?             @map("valor_texto") @db.Text
+  valorBooleano        Boolean?            @map("valor_booleano")
+  respostaTipo         TipoRespostaChecklist @map("resposta_tipo")
+  itemCritico          Boolean             @default(false) @map("item_critico")
+  resolvidoEm          DateTime?           @map("resolvido_em")
+  resolvidoPorId       String?             @map("resolvido_por_id") @db.Uuid
+  registradoEm         DateTime            @default(now()) @map("registrado_em")
+
+  checklist      Checklist         @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+  template       ChecklistTemplate @relation(fields: [templateId], references: [id])
+  resolvidoPor   Usuario?          @relation("ChecklistRespostaResolucao", fields: [resolvidoPorId], references: [id])
+
+  @@map("checklist_respostas")
+}
+
+model MovimentacaoCaixa {
+  id                 String               @id @default(uuid()) @db.Uuid
+  operadorId         String               @map("operador_id") @db.Uuid
+  turnoAbertoEm      DateTime             @map("turno_aberto_em")
+  turnoFechadoEm     DateTime?            @map("turno_fechado_em")
+  valorEsperado      Decimal              @map("valor_esperado") @db.Decimal(12,2)
+  valorEmMaos        Decimal              @map("valor_em_maos") @db.Decimal(12,2)
+  divergencia        Decimal              @db.Decimal(12,2)
+  justificativa      String?              @db.Text
+  status             StatusMovimentoCaixa @default(ABERTO)
+  aprovadoPorId      String?              @map("aprovado_por_id") @db.Uuid
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @updatedAt @map("updated_at")
+
+  operador Usuario @relation(fields: [operadorId], references: [id])
+
+  @@map("movimentacoes_caixa")
+}
+
+model LogAuditoria {
+  id          String   @id @default(uuid()) @db.Uuid
+  usuarioId   String?  @map("usuario_id") @db.Uuid
+  acao        String   @db.VarChar(255)
+  entidade    String   @db.VarChar(120)
+  entidadeId  String?  @map("entidade_id") @db.VarChar(80)
+  valorAntigo Json?    @map("valor_antigo")
+  valorNovo   Json?    @map("valor_novo")
+  ipAddress   String?  @map("ip_address") @db.VarChar(45)
+  userAgent   String?  @map("user_agent") @db.VarChar(255)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  usuario Usuario? @relation("LogAuditoriaUsuario", fields: [usuarioId], references: [id])
+
+  @@map("logs_auditoria")
+}

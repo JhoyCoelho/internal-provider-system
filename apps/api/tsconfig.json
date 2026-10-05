@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "resolveJsonModule": true,
+    "strict": true,
+    "noImplicitAny": true,
+    "useUnknownInCatchVariables": false
+  },
+  "include": ["src/**/*.ts", "src/**/*.d.ts"]
+}

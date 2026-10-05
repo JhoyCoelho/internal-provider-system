@@ -1,0 +1,21 @@
+{
+  "name": "sistema-interno",
+  "private": true,
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=22 <25"
+  },
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:api": "npm --workspace apps/api run dev",
+    "dev:web": "npm --workspace apps/web run dev",
+    "start:api": "npm --workspace apps/api run start",
+    "start:web": "npm --workspace apps/web run start",
+    "build": "npm --workspace apps/api run build && npm --workspace apps/web run build",
+    "typecheck": "npm --workspace apps/api run typecheck && npm --workspace apps/web run typecheck",
+    "lint": "npm --workspace apps/api run lint",
+    "prisma:deploy": "npm --workspace apps/api run prisma:deploy"
+  }
+}
