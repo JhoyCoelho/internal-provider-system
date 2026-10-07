@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { apiFetch } from '../lib/api';
+import { useAuth } from '../providers/auth-provider';
 
 type ChecklistIssue = {
   id: string;
@@ -37,6 +38,8 @@ function dateRangeLabel(from: string, to: string) {
 }
 
 export default function DashboardPage() {
+  const { user } = useAuth();
+  const isTechnician = Boolean(user?.roles.includes('TECNICO'));
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
@@ -126,11 +129,11 @@ export default function DashboardPage() {
       {message && <p role="status" className="rounded-lg bg-slate-100 px-4 py-3 text-sm text-slate-700">{message}</p>}
       {loading && <p className="px-3 text-sm text-slate-500">Atualizando indicadores...</p>}
 
-      <section className="card p-5">
+      {isTechnician && <section className="card p-5">
         <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-xl font-bold text-slate-900">Checklists</h2><p className="mt-1 text-sm text-slate-500">Pendências, preenchimentos e itens que precisam de atenção.</p></div><button type="button" disabled={!summary} onClick={exportChecklistReport} className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 disabled:opacity-50">Exportar relatório</button></div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{checklistMetrics.map((metric) => <article key={metric.label} className="rounded-xl border border-slate-200 p-4"><p className="text-sm text-slate-500">{metric.label}</p><p className={`mt-2 text-3xl font-bold ${metric.color}`}>{metric.value}</p></article>)}</div>
         <div className="mt-5"><h3 className="font-semibold text-slate-800">Itens a resolver</h3>{!summary || summary.checklists.issuesToResolve.length === 0 ? <p className="mt-2 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">Nenhum item pendente de resolução.</p> : <div className="mt-3 space-y-3">{summary.checklists.issuesToResolve.map((issue) => <article key={issue.id} className="flex flex-col gap-3 rounded-xl border border-rose-200 bg-rose-50/50 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold text-slate-900">{issue.template.pergunta}</p><p className="mt-1 text-sm text-slate-600">{issue.checklist.categoria} · {issue.checklist.usuario.nome} · {issue.valorBooleano === false ? 'Faltando' : 'Danificado'}</p>{issue.valorTexto && <p className="mt-1 text-sm text-slate-700">{issue.valorTexto}</p>}</div><button type="button" disabled={resolvingId === issue.id} onClick={() => resolveIssue(issue)} className="shrink-0 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60">{resolvingId === issue.id ? 'Salvando...' : 'Marcar resolvido'}</button></article>)}</div>}</div>
-      </section>
+      </section>}
 
       <section className="card p-5">
         <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-xl font-bold text-slate-900">Remoções</h2><p className="mt-1 text-sm text-slate-500">Resumo da fila e das tentativas de remoção.</p></div><button type="button" disabled={!summary} onClick={exportRemovalReport} className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 disabled:opacity-50">Exportar relatório</button></div>

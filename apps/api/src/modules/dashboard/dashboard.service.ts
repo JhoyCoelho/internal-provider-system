@@ -1,4 +1,4 @@
-import { Prisma, StatusChecklist, StatusOrdemRemocao, TipoRespostaChecklist } from '@prisma/client';
+import { JanelaChecklist, Prisma, StatusChecklist, StatusOrdemRemocao, TipoRespostaChecklist } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
 
 export type DashboardPeriod = { from?: Date; to?: Date };
@@ -12,6 +12,9 @@ export async function getDashboardSummary(period: DashboardPeriod, checklistUsua
   const checklistDateWhere = dateFilter(period, 'dataPreenchimento');
   const removalDateWhere = dateFilter(period, 'createdAt');
   const completedStatuses: StatusChecklist[] = [StatusChecklist.PREENCHIDO, StatusChecklist.APROVADO, StatusChecklist.REPROVADO];
+  const now = new Date();
+  const morningDeadline = new Date(now.getTime() - 30 * 60 * 1000);
+  const eveningDeadline = new Date(now.getTime() - 45 * 60 * 1000);
 
   const [pendingChecklists, filledChecklists, lateFilledChecklists, unresolvedResponses, completedRemovals, openRemovals, failedRemovals] = await Promise.all([
     prisma.checklist.count({
@@ -20,7 +23,8 @@ export async function getDashboardSummary(period: DashboardPeriod, checklistUsua
         ...(checklistUsuarioId ? { usuarioId: checklistUsuarioId } : {}),
         OR: [
           { status: { in: [StatusChecklist.EM_ATRASO, StatusChecklist.PENDENTE_APROVACAO] } },
-          { status: StatusChecklist.PENDENTE, dataPrevista: { lte: new Date() } },
+          { status: StatusChecklist.PENDENTE, janela: JanelaChecklist.INICIO_EXPEDIENTE, dataPrevista: { lte: morningDeadline } },
+          { status: StatusChecklist.PENDENTE, janela: JanelaChecklist.FIM_EXPEDIENTE, dataPrevista: { lte: eveningDeadline } },
         ],
       },
     }),

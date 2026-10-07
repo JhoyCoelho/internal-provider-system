@@ -7,6 +7,7 @@ import {
   createLateChecklist,
   getChecklistHistory,
   listChecklistTemplates,
+  listChecklistReport,
   listPendingChecklistsByUser,
   listPendingChecklistForSupervisor,
   justifyLateChecklist,
@@ -42,6 +43,10 @@ const lateChecklistSchema = z.object({
   motivo: z.enum(['ESQUECIMENTO', 'FALHA_SISTEMA', 'OUTROS']),
   descricao: z.string().min(5, 'Descrição obrigatória.'),
   assinaturaData: z.string().min(1),
+});
+const reportQuerySchema = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
 export async function listTemplatesController(_req: Request, res: Response) {
@@ -152,6 +157,23 @@ export async function getChecklistHistoryController(req: Request, res: Response)
     return res.status(500).json({
       message: 'Erro ao buscar histórico de checklist.',
     });
+  }
+}
+
+export async function listChecklistReportController(req: Request, res: Response) {
+  const parsed = reportQuerySchema.safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ message: 'Período inválido.', errors: parsed.error.flatten() });
+
+  const from = parsed.data.from ? new Date(`${parsed.data.from}T00:00:00.000Z`) : undefined;
+  const to = parsed.data.to ? new Date(`${parsed.data.to}T23:59:59.999Z`) : undefined;
+  if ((from && Number.isNaN(from.getTime())) || (to && Number.isNaN(to.getTime())) || (from && to && from > to)) {
+    return res.status(400).json({ message: 'Informe um período válido, com início anterior ao fim.' });
+  }
+
+  try {
+    return res.status(200).json(await listChecklistReport(from, to));
+  } catch {
+    return res.status(500).json({ message: 'Não foi possível carregar o relatório de checklists.' });
   }
 }
 

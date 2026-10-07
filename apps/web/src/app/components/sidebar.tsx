@@ -4,10 +4,10 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '../providers/auth-provider';
 
-const items: { href: string; label: string; permission?: string; role?: string; disabled?: boolean }[] = [
+const items: { href: string; label: string; permission?: string; roles?: string[]; role?: string; disabled?: boolean }[] = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/dashboard/remocao', label: 'Remoção', permission: 'ORDERS_READ' },
-  { href: '/dashboard/checklists', label: 'Checklists', permission: 'CHECKLIST_READ' },
+  { href: '/dashboard/checklists', label: 'Checklists', roles: ['TECNICO', 'MASTER_ADMIN'], permission: 'CHECKLIST_READ' },
   { href: '/dashboard/caixa', label: 'Caixa', permission: 'CASH_READ', disabled: true },
   { href: '/dashboard/auditoria', label: 'Auditoria', permission: 'AUDIT_READ' },
   { href: '/dashboard/administracao', label: 'Administração', role: 'MASTER_ADMIN' },
@@ -18,6 +18,7 @@ export function Sidebar() {
   const { user, logout } = useAuth();
   const visibleItems = items.filter((item) =>
     (!item.permission || user?.permissions.includes(item.permission))
+    && (!item.roles || item.roles.some((role) => user?.roles.includes(role)))
     && (!item.role || user?.roles.includes(item.role)));
 
   return (

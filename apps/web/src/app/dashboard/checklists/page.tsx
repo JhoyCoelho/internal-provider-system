@@ -2,11 +2,27 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { apiFetch } from '../../lib/api';
+import { useAuth } from '../../providers/auth-provider';
 
 type Category = 'FERRAMENTAS' | 'VEICULO' | 'EPIS';
 type Template = { id: string; categoria: string; pergunta: string; tipoResposta: 'OK' | 'NAO_CONFORME' | 'TEXTO' };
 type Pending = { id: string; categoria: Category; status: 'PENDENTE' | 'EM_ATRASO' | 'PREENCHIDO' | 'APROVADO' | 'REPROVADO' | 'PENDENTE_APROVACAO'; dataPrevista: string | null; janela: 'INICIO_EXPEDIENTE' | 'FIM_EXPEDIENTE'; canFillNow: boolean; requiresJustification: boolean };
 type Answer = { respostaTipo: 'OK' | 'NAO_CONFORME' | 'TEXTO'; valorTexto: string; valorBooleano: boolean | null };
+type ChecklistRecord = {
+  id: string;
+  categoria: string;
+  janela: 'INICIO_EXPEDIENTE' | 'FIM_EXPEDIENTE' | null;
+  dataAgenda: string | null;
+  dataPrevista: string | null;
+  dataPreenchimento: string | null;
+  status: 'PENDENTE' | 'PREENCHIDO' | 'EM_ATRASO' | 'PENDENTE_APROVACAO' | 'APROVADO' | 'REPROVADO';
+  requiresJustification?: boolean;
+  justificativaAtraso: string | null;
+  assinaturaData: string | null;
+  createdAt: string;
+  usuario?: { id: string; nome: string; email: string };
+  respostas: { id: string; respostaTipo: 'OK' | 'NAO_CONFORME' | 'TEXTO'; valorTexto: string | null; valorBooleano: boolean | null; itemCritico: boolean; template: { id: string; pergunta: string; tipoResposta: 'OK' | 'NAO_CONFORME' | 'TEXTO'; categoria: string } }[];
+};
 
 type Screen = 'home' | 'justification' | 'checklist';
 
@@ -15,11 +31,27 @@ const categories: { key: Category; label: string }[] = [
   { key: 'VEICULO', label: 'Veículo' },
   { key: 'EPIS', label: 'EPIs' },
 ];
-const windowLabels = { INICIO_EXPEDIENTE: 'Início do expediente · 08:00–08:30', FIM_EXPEDIENTE: 'Fim do expediente · 17:30–18:15' };
+const windowLabels = { INICIO_EXPEDIENTE: 'Início do expediente · 08:00–08:30', FIM_EXPEDIENTE: 'Fim do expediente · 17:45–18:30' };
 
 function formatDate(value: string | null) {
   if (!value) return 'Não definida';
   return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value));
+}
+
+function checklistCategoryLabel(value: string) {
+  return categories.find((category) => category.key === value)?.label ?? value;
+}
+
+function checklistStatusLabel(value: ChecklistRecord['status']) {
+  return ({ PENDENTE: 'Pendente', PREENCHIDO: 'Preenchido', EM_ATRASO: 'Em atraso', PENDENTE_APROVACAO: 'Aguardando aprovação', APROVADO: 'Aprovado', REPROVADO: 'Reprovado' })[value];
+}
+
+function checklistAnswerStatus(record: ChecklistRecord, answer: ChecklistRecord['respostas'][number]) {
+  if (answer.respostaTipo === 'OK') return record.categoria === 'VEICULO' ? 'SIM' : 'OK';
+  if (record.categoria === 'VEICULO') return 'NÃO';
+  if (answer.valorBooleano === false) return 'FALTANDO';
+  if (answer.valorBooleano === true) return 'DANIFICADO';
+  return 'NÃO CONFORME';
 }
 
 function SignaturePad({ onChange }: { onChange: (value: string) => void }) {
@@ -45,9 +77,46 @@ function SignaturePad({ onChange }: { onChange: (value: string) => void }) {
   );
 }
 
+function ChecklistPrintSheet({ record, technicianName }: { record: ChecklistRecord; technicianName: string }) {
+  const filledAt = record.dataPreenchimento ?? record.createdAt;
+  return (
+    <article className="checklist-print-sheet">
+      <header className="checklist-print-header">
+        <div className="checklist-print-brand"><span>FYBER</span><strong>LINK</strong></div>
+        <h1>CHECKLIST TÉCNICO</h1>
+      </header>
+      <section className="checklist-print-meta">
+        <p><b>Técnico:</b> {technicianName}</p>
+        <p><b>Data:</b> {formatDate(filledAt)}</p>
+        <p><b>Tipo:</b> {checklistCategoryLabel(record.categoria)}</p>
+        <p><b>Destino:</b> Gestão / Supervisão</p>
+      </section>
+      {record.justificativaAtraso && <p className="checklist-print-justification"><b>Justificativa:</b> {record.justificativaAtraso}</p>}
+      <table className="checklist-print-table">
+        <thead><tr><th>Item</th><th>Status</th><th>Observação</th></tr></thead>
+        <tbody>{record.respostas.map((answer, index) => {
+          const status = checklistAnswerStatus(record, answer);
+          const statusClass = status === 'OK' || status === 'SIM' ? 'is-ok' : status === 'DANIFICADO' || status === 'NÃO' ? 'is-damaged' : status === 'FALTANDO' ? 'is-missing' : 'is-text';
+          return <tr key={answer.id}><td>{index + 1} - {answer.template.pergunta}</td><td><span className={`checklist-print-badge ${statusClass}`}>{status}</span></td><td>{answer.valorTexto?.trim() || '-'}</td></tr>;
+        })}</tbody>
+      </table>
+      <section className="checklist-print-signature">
+        <h2>Assinatura do Técnico</h2>
+        {record.assinaturaData ? <img src={record.assinaturaData} alt={`Assinatura de ${technicianName}`} /> : <div className="checklist-print-signature-empty">Sem assinatura registrada</div>}
+      </section>
+      <footer>Documento gerado sob demanda pelo sistema Fyberlink. Nenhum PDF é armazenado.</footer>
+    </article>
+  );
+}
+
 export default function ChecklistsPage() {
+  const { user, isLoading: authLoading } = useAuth();
+  const isTechnician = Boolean(user?.roles.includes('TECNICO'));
+  const isMasterAdmin = Boolean(user?.roles.includes('MASTER_ADMIN'));
   const [templates, setTemplates] = useState<Template[]>([]);
   const [pending, setPending] = useState<Pending[]>([]);
+  const [history, setHistory] = useState<ChecklistRecord[]>([]);
+  const [teamRecords, setTeamRecords] = useState<ChecklistRecord[]>([]);
   const [screen, setScreen] = useState<Screen>('home');
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   const [selectedPending, setSelectedPending] = useState<Pending | null>(null);
@@ -60,16 +129,19 @@ export default function ChecklistsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [now] = useState(() => new Date().toISOString());
+  const [printRecord, setPrintRecord] = useState<ChecklistRecord | null>(null);
 
   async function loadData() {
     setLoading(true);
     try {
-      const [templateData, pendingData] = await Promise.all([
+      const [templateData, pendingData, historyData] = await Promise.all([
         apiFetch<Template[]>('/api/checklists/templates'),
         apiFetch<Pending[]>('/api/checklists/pendentes/me'),
+        apiFetch<ChecklistRecord[]>('/api/checklists/me'),
       ]);
       setTemplates(templateData);
       setPending(pendingData);
+      setHistory(historyData);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Não foi possível carregar os checklists.');
     } finally {
@@ -77,11 +149,43 @@ export default function ChecklistsPage() {
     }
   }
 
-  useEffect(() => { void loadData(); }, []);
+  async function loadMasterDashboard() {
+    setLoading(true);
+    try {
+      setTeamRecords(await apiFetch<ChecklistRecord[]>('/api/checklists/relatorio'));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Não foi possível carregar o resumo dos checklists.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (isTechnician) void loadData();
+    else if (isMasterAdmin) void loadMasterDashboard();
+    else setLoading(false);
+  }, [isTechnician, isMasterAdmin]);
+  useEffect(() => {
+    if (!printRecord) return;
+    const previousTitle = document.title;
+    document.title = `Checklist-${checklistCategoryLabel(printRecord.categoria)}`;
+    const timer = window.setTimeout(() => window.print(), 150);
+    const clearPrintRecord = () => {
+      document.title = previousTitle;
+      setPrintRecord(null);
+    };
+    window.addEventListener('afterprint', clearPrintRecord);
+    return () => { window.clearTimeout(timer); window.removeEventListener('afterprint', clearPrintRecord); document.title = previousTitle; };
+  }, [printRecord]);
 
   const actionablePending = pending.filter((slot) => slot.canFillNow || slot.requiresJustification);
   const selectedTemplates = templates.filter((template) => template.categoria === selectedCategory);
   const selectedLabel = categories.find((category) => category.key === selectedCategory)?.label ?? 'Checklist';
+  const masterPendingRecords = teamRecords.filter((record) => ['PENDENTE', 'EM_ATRASO', 'PENDENTE_APROVACAO'].includes(record.status));
+  const masterLateRecords = masterPendingRecords.filter((record) => record.requiresJustification || ['EM_ATRASO', 'PENDENTE_APROVACAO'].includes(record.status));
+  const masterCorrectRecords = teamRecords.filter((record) =>
+    ['PREENCHIDO', 'APROVADO'].includes(record.status)
+    && !record.respostas.some((answer) => answer.respostaTipo === 'NAO_CONFORME'));
 
   function resetForm() {
     setAnswers({}); setSignature(''); setObservations(''); setMessage(null);
@@ -127,7 +231,21 @@ export default function ChecklistsPage() {
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Não foi possível enviar o checklist.'); } finally { setSubmitting(false); }
   }
 
-  if (loading) return <main className="mx-auto max-w-2xl p-4 text-sm text-slate-500">Carregando checklists...</main>;
+  if (authLoading || loading) return <main className="mx-auto max-w-2xl p-4 text-sm text-slate-500">Carregando checklists...</main>;
+  if (!isTechnician && !isMasterAdmin) return <main className="mx-auto max-w-2xl p-4 text-sm text-slate-600">Acesso restrito a técnicos e Master Admin.</main>;
+
+  if (isMasterAdmin) return (
+    <main className="mx-auto max-w-5xl space-y-4 pb-6">
+      <header className="px-2 py-3"><h1 className="text-2xl font-bold text-slate-900">Resumo de checklists</h1><p className="mt-1 text-sm text-slate-500">Pendências da equipe e checklists preenchidos sem não conformidades.</p></header>
+      {message && <p role="status" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{message}</p>}
+      {masterPendingRecords.length || masterCorrectRecords.length ? <>
+        <div className="grid gap-3 sm:grid-cols-3"><article className="rounded-lg border border-amber-200 bg-amber-50 p-4"><p className="text-sm text-amber-800">Pendentes</p><p className="mt-1 text-3xl font-bold text-amber-900">{masterPendingRecords.length - masterLateRecords.length}</p></article><article className="rounded-lg border border-rose-200 bg-rose-50 p-4"><p className="text-sm text-rose-800">Atrasados</p><p className="mt-1 text-3xl font-bold text-rose-900">{masterLateRecords.length}</p></article><article className="rounded-lg border border-emerald-200 bg-emerald-50 p-4"><p className="text-sm text-emerald-800">Preenchidos corretamente</p><p className="mt-1 text-3xl font-bold text-emerald-900">{masterCorrectRecords.length}</p></article></div>
+        {masterPendingRecords.length > 0 && <section className="card space-y-3 p-5"><h2 className="text-lg font-semibold text-slate-900">Pendências da equipe</h2><div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead><tr className="border-b border-slate-200 text-xs uppercase text-slate-500"><th className="px-3 py-2">Colaborador</th><th className="px-3 py-2">Categoria</th><th className="px-3 py-2">Prazo</th><th className="px-3 py-2">Status</th></tr></thead><tbody>{masterPendingRecords.map((record) => <tr key={record.id} className="border-b border-slate-100 last:border-0"><td className="px-3 py-2 font-medium text-slate-800">{record.usuario?.nome ?? 'Usuário'}</td><td className="px-3 py-2">{checklistCategoryLabel(record.categoria)}</td><td className="px-3 py-2">{record.janela ? windowLabels[record.janela] : 'Avulso'} · {formatDate(record.dataPrevista)}</td><td className="px-3 py-2">{record.requiresJustification ? 'Atrasado' : checklistStatusLabel(record.status)}</td></tr>)}</tbody></table></div></section>}
+        {masterCorrectRecords.length > 0 && <section className="card space-y-3 p-5"><h2 className="text-lg font-semibold text-slate-900">Preenchidos corretamente</h2><div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead><tr className="border-b border-slate-200 text-xs uppercase text-slate-500"><th className="px-3 py-2">Colaborador</th><th className="px-3 py-2">Categoria</th><th className="px-3 py-2">Data</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Ação</th></tr></thead><tbody>{masterCorrectRecords.map((record) => <tr key={record.id} className="border-b border-slate-100 last:border-0"><td className="px-3 py-2 font-medium text-slate-800">{record.usuario?.nome ?? 'Usuário'}</td><td className="px-3 py-2">{checklistCategoryLabel(record.categoria)}</td><td className="px-3 py-2">{formatDate(record.dataPreenchimento)}</td><td className="px-3 py-2">{checklistStatusLabel(record.status)}</td><td className="px-3 py-2"><button type="button" onClick={() => setPrintRecord(record)} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium">Imprimir</button></td></tr>)}</tbody></table></div></section>}
+      </> : <p className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-600">Não há checklists pendentes ou preenchidos corretamente.</p>}
+      {printRecord && <ChecklistPrintSheet record={printRecord} technicianName={printRecord.usuario?.nome ?? 'Colaborador'} />}
+    </main>
+  );
 
   if (screen === 'justification' && selectedPending) {
     return (
@@ -167,10 +285,11 @@ export default function ChecklistsPage() {
   }
 
   return (
-    <main className="mx-auto max-w-2xl space-y-4 pb-6">
+    <main className="mx-auto max-w-6xl space-y-4 pb-6">
       <header className="px-2 py-3"><h1 className="text-2xl font-bold text-slate-900">Checklist Técnico</h1></header>
       <section className="card p-5"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Checklists Pendentes</p><p className="mt-1 text-4xl font-bold text-slate-900">{actionablePending.length}</p></div>{actionablePending.length ? <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">Preencha cada checklist no horário indicado. Os horários vencidos precisam de justificativa.</p> : <p className="mt-4 text-sm text-slate-600">Nenhum checklist pendente neste momento.</p>}</section>
       {message && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p>}
+      <section className="card space-y-3 p-5"><div><h2 className="text-lg font-semibold text-slate-900">Meu histórico individual</h2><p className="mt-1 text-sm text-slate-500">Seus registros de ferramentas, veículo e EPIs.</p></div>{history.length ? <div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead><tr className="border-b border-slate-200 text-xs uppercase text-slate-500"><th className="px-3 py-2">Categoria</th><th className="px-3 py-2">Data</th><th className="px-3 py-2">Janela</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Ações</th></tr></thead><tbody>{history.map((record) => <tr key={record.id} className="border-b border-slate-100 last:border-0"><td className="px-3 py-2">{checklistCategoryLabel(record.categoria)}</td><td className="px-3 py-2">{formatDate(record.dataPreenchimento ?? record.dataPrevista)}</td><td className="px-3 py-2">{record.janela ? windowLabels[record.janela] : 'Extra'}</td><td className="px-3 py-2">{checklistStatusLabel(record.status)}</td><td className="px-3 py-2">{['PREENCHIDO', 'APROVADO', 'REPROVADO'].includes(record.status) ? <button type="button" onClick={() => setPrintRecord(record)} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium">Imprimir</button> : <span className="text-xs text-slate-400">Indisponível</span>}</td></tr>)}</tbody></table></div> : <p className="text-sm text-slate-500">Nenhum checklist registrado ainda.</p>}</section>
       {categories.map((category) => {
         const slots = pending.filter((slot) => slot.categoria === category.key);
         return <section key={category.key} className="card space-y-3 p-5"><div><h2 className="text-xl font-semibold text-slate-900">{category.label}</h2><p className="mt-1 text-sm text-slate-500">Duas conferências diárias</p></div>{slots.map((slot) => {
@@ -179,6 +298,7 @@ export default function ChecklistsPage() {
           return <div key={slot.id} className="flex flex-col gap-2 rounded-lg border border-slate-200 p-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-medium text-slate-800">{windowLabels[slot.janela]}</p><p className="text-xs text-slate-500">Previsto: {formatDate(slot.dataPrevista)}</p></div><button type="button" disabled={!slot.canFillNow && !slot.requiresJustification} onClick={() => openChecklistSlot(slot)} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500">{actionLabel}</button></div>;
         })}</section>;
       })}
+      {printRecord && <ChecklistPrintSheet record={printRecord} technicianName={printRecord.usuario?.nome ?? user?.nome ?? 'Colaborador'} />}
     </main>
   );
 }

@@ -123,3 +123,155 @@ body {
   min-height: 2.75rem;
   margin-top: auto;
 }
+
+.checklist-print-sheet {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 14mm;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .checklist-print-sheet,
+  .checklist-print-sheet * {
+    visibility: visible !important;
+  }
+
+  .checklist-print-sheet {
+    position: absolute;
+    inset: 0 auto auto 0;
+    display: block !important;
+    width: 100%;
+    padding: 0;
+    color: #172033;
+    background: #fff;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 10pt;
+  }
+
+  .checklist-print-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 12px;
+    border-bottom: 2px solid #173a63;
+  }
+
+  .checklist-print-brand {
+    color: #173a63;
+    font-size: 22pt;
+    font-weight: 700;
+    letter-spacing: 1px;
+  }
+
+  .checklist-print-brand strong {
+    color: #0f766e;
+  }
+
+  .checklist-print-header h1 {
+    margin: 0;
+    color: #173a63;
+    font-size: 16pt;
+  }
+
+  .checklist-print-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px 18px;
+    padding: 15px 0;
+  }
+
+  .checklist-print-meta p,
+  .checklist-print-justification {
+    margin: 0;
+  }
+
+  .checklist-print-justification {
+    margin-bottom: 12px;
+    padding: 8px;
+    border: 1px solid #d7dee8;
+  }
+
+  .checklist-print-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+
+  .checklist-print-table th,
+  .checklist-print-table td {
+    padding: 7px 8px;
+    border: 1px solid #b8c3d1;
+    text-align: left;
+    vertical-align: top;
+    overflow-wrap: anywhere;
+  }
+
+  .checklist-print-table th {
+    color: #173a63;
+    background: #edf2f7 !important;
+    font-weight: 700;
+    print-color-adjust: exact;
+  }
+
+  .checklist-print-table th:first-child {
+    width: 48%;
+  }
+
+  .checklist-print-table th:nth-child(2) {
+    width: 19%;
+  }
+
+  .checklist-print-badge {
+    font-weight: 700;
+  }
+
+  .checklist-print-badge.is-ok {
+    color: #166534;
+  }
+
+  .checklist-print-badge.is-damaged {
+    color: #b91c1c;
+  }
+
+  .checklist-print-badge.is-missing {
+    color: #a16207;
+  }
+
+  .checklist-print-signature {
+    margin-top: 24px;
+    break-inside: avoid;
+  }
+
+  .checklist-print-signature h2 {
+    margin: 0 0 8px;
+    font-size: 11pt;
+  }
+
+  .checklist-print-signature img {
+    display: block;
+    width: 230px;
+    height: 90px;
+    object-fit: contain;
+    object-position: left center;
+    border-bottom: 1px solid #64748b;
+  }
+
+  .checklist-print-signature-empty {
+    width: 230px;
+    height: 90px;
+    border-bottom: 1px solid #64748b;
+  }
+
+  .checklist-print-sheet footer {
+    margin-top: 18px;
+    color: #64748b;
+    font-size: 8pt;
+  }
+}

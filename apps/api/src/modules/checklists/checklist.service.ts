@@ -1,4 +1,4 @@
-import { JanelaChecklist, Prisma, StatusChecklist, TipoRespostaChecklist } from '@prisma/client';
+import { JanelaChecklist, Prisma, RoleCode, StatusChecklist, StatusUsuario, TipoRespostaChecklist } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
 
 export type ChecklistTemplateInput = {
@@ -21,15 +21,15 @@ export type ChecklistAnswerInput = {
 const checklistCategories = ['FERRAMENTAS', 'VEICULO', 'EPIS'];
 const checklistWindows = [
   { code: JanelaChecklist.INICIO_EXPEDIENTE, startMinute: 8 * 60, endMinute: 8 * 60 + 30 },
-  { code: JanelaChecklist.FIM_EXPEDIENTE, startMinute: 17 * 60 + 30, endMinute: 18 * 60 + 15 },
+  { code: JanelaChecklist.FIM_EXPEDIENTE, startMinute: 17 * 60 + 45, endMinute: 18 * 60 + 30 },
 ];
 
 function saoPauloDateParts(date: Date) {
   const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Sao_Paulo', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', hourCycle: 'h23',
+    timeZone: 'America/Sao_Paulo', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric', hourCycle: 'h23',
   }).formatToParts(date);
   const values = Object.fromEntries(parts.map((part) => [part.type, Number(part.value)]));
-  return { year: values.year, month: values.month, day: values.day, minuteOfDay: values.hour * 60 + values.minute };
+  return { year: values.year, month: values.month, day: values.day, minuteOfDay: values.hour * 60 + values.minute, secondOfDay: values.hour * 3600 + values.minute * 60 + values.second };
 }
 
 function scheduledDate(year: number, month: number, day: number, minuteOfDay: number) {
@@ -79,7 +79,7 @@ function isWindowOpen(janela: JanelaChecklist | null, dataAgenda: Date | null, n
   const today = new Date(Date.UTC(local.year, local.month - 1, local.day)).toISOString().slice(0, 10);
   if (agendaDate !== today) return false;
   const window = checklistWindows.find((candidate) => candidate.code === janela);
-  return Boolean(window && local.minuteOfDay >= window.startMinute && local.minuteOfDay <= window.endMinute);
+  return Boolean(window && local.secondOfDay >= window.startMinute * 60 && local.secondOfDay < window.endMinute * 60);
 }
 
 function isWindowPast(janela: JanelaChecklist | null, dataAgenda: Date | null, now = new Date()) {
@@ -90,7 +90,7 @@ function isWindowPast(janela: JanelaChecklist | null, dataAgenda: Date | null, n
   if (agendaDate < today) return true;
   if (agendaDate > today) return false;
   const window = checklistWindows.find((candidate) => candidate.code === janela);
-  return Boolean(window && local.minuteOfDay > window.endMinute);
+  return Boolean(window && local.secondOfDay >= window.endMinute * 60);
 }
 
 export async function listChecklistTemplates() {
@@ -248,9 +248,14 @@ export async function getChecklistHistory(usuarioId: string) {
     orderBy: [{ createdAt: 'desc' }],
     select: {
       id: true,
+      categoria: true,
+      janela: true,
+      dataAgenda: true,
+      dataPrevista: true,
       status: true,
       dataPreenchimento: true,
       justificativaAtraso: true,
+      assinaturaData: true,
       createdAt: true,
       respostas: {
         select: {
@@ -264,12 +269,47 @@ export async function getChecklistHistory(usuarioId: string) {
               id: true,
               pergunta: true,
               tipoResposta: true,
+              categoria: true,
             },
           },
         },
       },
     },
   });
+}
+
+export async function listChecklistReport(from?: Date, to?: Date) {
+  const technicians = await prisma.usuario.findMany({
+    where: { status: StatusUsuario.ATIVO, roles: { some: { perfil: { code: RoleCode.TECNICO } } } },
+    select: { id: true },
+  });
+  await Promise.all(technicians.map(({ id }) => ensureDailyChecklistSlots(id)));
+
+  const rows = await prisma.checklist.findMany({
+    where: from || to ? {
+      dataAgenda: {
+        not: null,
+        ...(from ? { gte: from } : {}),
+        ...(to ? { lte: to } : {}),
+      },
+    } : {},
+    orderBy: [{ dataAgenda: 'desc' }, { createdAt: 'desc' }],
+    take: 2000,
+    include: {
+      usuario: { select: { id: true, nome: true, email: true } },
+      respostas: {
+        orderBy: { registradoEm: 'asc' },
+        include: {
+          template: { select: { id: true, pergunta: true, tipoResposta: true, categoria: true } },
+        },
+      },
+    },
+  });
+  const now = new Date();
+  return rows.map((row) => ({
+    ...row,
+    requiresJustification: row.status === StatusChecklist.PENDENTE && isWindowPast(row.janela, row.dataAgenda, now),
+  }));
 }
 
 export async function listPendingChecklistForSupervisor() {
