@@ -236,15 +236,6 @@ export default function RemocaoPage() {
     } catch (error) { setOrderMessage(error instanceof Error ? error.message : 'Não foi possível registrar a observação.'); }
   }
 
-  function useDeviceLocation() {
-    if (!navigator.geolocation) { setRouteError('Este dispositivo não disponibiliza localização. Marque a origem no mapa.'); return; }
-    navigator.geolocation.getCurrentPosition(
-      (position) => { setRouteOrigin(`${position.coords.latitude.toFixed(6)},${position.coords.longitude.toFixed(6)}`); setRouteError(null); },
-      () => setRouteError('Não foi possível obter sua localização. Marque o ponto de partida no mapa.'),
-      { enableHighAccuracy: true, timeout: 10000 },
-    );
-  }
-
   async function createRoute() {
     if (activeRoute) {
       setRoutePlan(activeRoute);
@@ -295,8 +286,7 @@ export default function RemocaoPage() {
 
       {showRoutePanel && <section className="card space-y-4 p-5">
         <div className="flex items-start justify-between gap-3"><div><h2 className="text-lg font-semibold text-slate-900">Planejar rota</h2><p className="mt-1 text-sm text-slate-600">Usará as {routeCandidates.length} ordens abertas ou com tentativa sem sucesso exibidas após os filtros atuais.</p></div><button type="button" onClick={() => setShowRoutePanel(false)} className="text-sm text-slate-500">Fechar</button></div>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center"><button type="button" onClick={useDeviceLocation} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700">Usar minha localização</button><span className="text-xs text-slate-500">Ou clique no mapa para marcar o ponto de partida.</span></div>
-        <LocationPicker value={routeOrigin} onChange={(value) => { setRouteOrigin(value); setRouteError(null); }} />
+        <LocationPicker value={routeOrigin} onChange={(value) => { setRouteOrigin(value); setRouteError(null); }} onDeviceLocation={(value) => { setRouteOrigin(value); setRouteError(null); }} />
         {routeOrigin && <p className="text-sm font-medium text-emerald-700">Origem: {routeOrigin}</p>}
         {routeError && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{routeError}</p>}
         <button type="button" disabled={creatingRoute || !routeCandidates.length} onClick={createRoute} className="w-full rounded-xl bg-brand-600 px-4 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{creatingRoute ? 'Calculando sequência...' : 'Gerar rota otimizada'}</button>
