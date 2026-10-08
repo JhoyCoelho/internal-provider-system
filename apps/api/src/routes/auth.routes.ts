@@ -24,7 +24,7 @@ const loginRateLimit = rateLimit({
 
 const loginSchema = z.object({
   email: z.string().trim().toLowerCase().email('E-mail inválido.'),
-  password: z.string().min(env.NODE_ENV === 'production' ? 12 : 6, env.NODE_ENV === 'production' ? 'Senha deve conter pelo menos 12 caracteres.' : 'Senha inválida.')
+  password: z.string().min(8, 'Senha deve conter pelo menos 8 caracteres.')
     .refine((password) => Buffer.byteLength(password, 'utf8') <= 72, 'Senha excede o tamanho máximo aceito pelo algoritmo de hash.'),
 });
 

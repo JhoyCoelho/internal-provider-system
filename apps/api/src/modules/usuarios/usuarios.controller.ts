@@ -5,7 +5,7 @@ import { createManagedUser, deleteManagedUser, listManagedUsers, updateManagedUs
 
 const roleSchema = z.enum(['MASTER_ADMIN', 'ADMIN', 'TECNICO']);
 const passwordSchema = z.string()
-  .min(16, 'A senha deve conter pelo menos 16 caracteres.')
+  .min(8, 'A senha deve conter pelo menos 8 caracteres.')
   .refine((password) => Buffer.byteLength(password, 'utf8') <= 72, 'A senha excede 72 bytes.');
 const createUserSchema = z.object({
   nome: z.string().trim().min(2).max(160),

@@ -112,7 +112,7 @@ async function main() {
   }
   if (bootstrapEmail && bootstrapPassword) {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(bootstrapEmail)) throw new Error('INITIAL_ADMIN_EMAIL deve ser um e-mail válido.');
-    if (bootstrapPassword.length < 16) throw new Error('INITIAL_ADMIN_PASSWORD deve conter pelo menos 16 caracteres.');
+    if (bootstrapPassword.length < 8) throw new Error('INITIAL_ADMIN_PASSWORD deve conter pelo menos 8 caracteres.');
     if (Buffer.byteLength(bootstrapPassword, 'utf8') > 72) throw new Error('INITIAL_ADMIN_PASSWORD excede o limite de 72 bytes do bcrypt.');
 
     const adminRole = await prisma.perfil.findUniqueOrThrow({ where: { code: RoleCode.MASTER_ADMIN } });

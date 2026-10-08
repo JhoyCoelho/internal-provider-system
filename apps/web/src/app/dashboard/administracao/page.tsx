@@ -210,8 +210,8 @@ export default function AdministrationPage() {
     event.preventDefault();
     setError(null);
     setMessage(null);
-    if (!editingUser && form.password.length < 16) {
-      setError('A senha inicial deve conter pelo menos 16 caracteres.');
+    if (!editingUser && form.password.length < 8) {
+      setError('A senha inicial deve conter pelo menos 8 caracteres.');
       return;
     }
     if (!form.role) {
@@ -302,7 +302,7 @@ export default function AdministrationPage() {
           <label className="text-sm font-medium text-slate-700">E-mail<input required type="email" maxLength={160} autoComplete="email" value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal" /></label>
           <label className="text-sm font-medium text-slate-700">Tipo de usuário<select required value={form.role} onChange={(event) => setForm((current) => ({ ...current, role: event.target.value as UserRole }))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 font-normal"><option value="" disabled>Selecione um tipo</option>{roles.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}</select>{editingUser && !form.role && <span className="mt-1 block text-xs font-normal text-amber-700">Este usuário usa um perfil legado. Escolha um dos três tipos antes de salvar.</span>}</label>
           {editingUser && <label className="text-sm font-medium text-slate-700">Status<select value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value as UserStatus }))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 font-normal"><option value="ATIVO">Ativo</option><option value="INATIVO">Inativo</option><option value="BLOQUEADO">Bloqueado</option></select></label>}
-          <label className="text-sm font-medium text-slate-700 sm:col-span-2">{editingUser ? 'Nova senha (opcional)' : 'Senha inicial'}<input required={!editingUser} type="password" minLength={16} maxLength={72} autoComplete="new-password" value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal" placeholder={editingUser ? 'Deixe em branco para manter a senha atual' : 'Mínimo de 16 caracteres'} />{editingUser && <span className="mt-1 block text-xs font-normal text-slate-500">O campo não revela a senha atual; preencha somente para redefini-la.</span>}</label>
+          <label className="text-sm font-medium text-slate-700 sm:col-span-2">{editingUser ? 'Nova senha (opcional)' : 'Senha inicial'}<input required={!editingUser} type="password" minLength={8} maxLength={72} autoComplete="new-password" value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal" placeholder={editingUser ? 'Deixe em branco para manter a senha atual' : 'Mínimo de 8 caracteres'} />{editingUser && <span className="mt-1 block text-xs font-normal text-slate-500">O campo não revela a senha atual; preencha somente para redefini-la.</span>}</label>
           {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700 sm:col-span-2">{error}</p>}
           <div className="flex gap-2 sm:col-span-2"><button type="submit" disabled={savingUser} className="rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{savingUser ? 'Salvando...' : editingUser ? 'Salvar alterações' : 'Criar usuário'}</button><button type="button" onClick={() => { setShowForm(false); setError(null); }} className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700">Cancelar</button></div>
         </form>}

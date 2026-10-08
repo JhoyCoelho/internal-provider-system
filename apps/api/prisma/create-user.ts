@@ -13,8 +13,8 @@ async function main() {
     throw new Error('Configure USER_EMAIL, USER_NAME, USER_PASSWORD e USER_ROLE no ambiente antes de executar.');
   }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('USER_EMAIL deve ser um e-mail válido.');
-  if (password.length < 16 || Buffer.byteLength(password, 'utf8') > 72) {
-    throw new Error('USER_PASSWORD deve ter entre 16 e 72 bytes.');
+  if (password.length < 8 || Buffer.byteLength(password, 'utf8') > 72) {
+    throw new Error('USER_PASSWORD deve ter entre 8 e 72 bytes.');
   }
   if (!Object.values(RoleCode).includes(roleCode)) throw new Error(`USER_ROLE inválido. Valores aceitos: ${Object.values(RoleCode).join(', ')}.`);
   if (await prisma.usuario.findUnique({ where: { email }, select: { id: true } })) {
