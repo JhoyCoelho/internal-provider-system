@@ -1,13 +1,26 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Image from 'next/image';
 import { apiFetch } from '../../lib/api';
 import { useAuth } from '../../providers/auth-provider';
+import { usePlatformTheme } from '../../providers/platform-theme-provider';
 
 type Category = 'FERRAMENTAS' | 'VEICULO' | 'EPIS';
 type Template = { id: string; categoria: string; pergunta: string; tipoResposta: 'OK' | 'NAO_CONFORME' | 'TEXTO' };
 type Pending = { id: string; categoria: Category; status: 'PENDENTE' | 'EM_ATRASO' | 'PREENCHIDO' | 'APROVADO' | 'REPROVADO' | 'PENDENTE_APROVACAO'; dataPrevista: string | null; janela: 'INICIO_EXPEDIENTE' | 'FIM_EXPEDIENTE'; canFillNow: boolean; requiresJustification: boolean };
 type Answer = { respostaTipo: 'OK' | 'NAO_CONFORME' | 'TEXTO'; valorTexto: string; valorBooleano: boolean | null };
+type ResponsibilityTerm = {
+  id: string;
+  descricao: string;
+  criadoPorNome: string;
+  usuarioDesignadoNome: string;
+  usuarioDesignadoEmail: string;
+  assinaturaData: string | null;
+  assinadoEm: string | null;
+  createdAt: string;
+};
+type TermRecipient = { id: string; nome: string; email: string; role: string; status: 'ATIVO' | 'INATIVO' | 'BLOQUEADO' };
 type ChecklistRecord = {
   id: string;
   categoria: string;
@@ -20,6 +33,7 @@ type ChecklistRecord = {
   justificativaAtraso: string | null;
   assinaturaData: string | null;
   createdAt: string;
+  usuarioNome?: string | null;
   usuario?: { id: string; nome: string; email: string };
   respostas: { id: string; respostaTipo: 'OK' | 'NAO_CONFORME' | 'TEXTO'; valorTexto: string | null; valorBooleano: boolean | null; itemCritico: boolean; template: { id: string; pergunta: string; tipoResposta: 'OK' | 'NAO_CONFORME' | 'TEXTO'; categoria: string } }[];
 };
@@ -77,12 +91,60 @@ function SignaturePad({ onChange }: { onChange: (value: string) => void }) {
   );
 }
 
-function ChecklistPrintSheet({ record, technicianName }: { record: ChecklistRecord; technicianName: string }) {
+function ResponsibilityTermCard({ term, onSigned }: { term: ResponsibilityTerm; onSigned: (term: ResponsibilityTerm) => void }) {
+  const [signature, setSignature] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function signTerm() {
+    if (!signature) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const signed = await apiFetch<ResponsibilityTerm>(`/api/checklists/termos/${term.id}/assinar`, {
+        method: 'POST',
+        body: JSON.stringify({ assinaturaData: signature }),
+      });
+      window.dispatchEvent(new Event('responsibility-terms-updated'));
+      onSigned(signed);
+    } catch (signError) {
+      setError(signError instanceof Error ? signError.message : 'Não foi possível registrar a assinatura.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <article className="rounded-lg border border-amber-200 bg-amber-50/60 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-xs font-semibold uppercase text-amber-800">Termo de responsabilidade pendente</p><p className="mt-1 text-xs text-slate-500">Emitido por {term.criadoPorNome} · {formatDate(term.createdAt)}</p></div><span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-900">Assinatura necessária</span></div>
+      <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-slate-800">{term.descricao}</p>
+      <p className="mt-4 text-sm font-medium text-slate-800">Assinatura do responsável</p>
+      <SignaturePad onChange={setSignature} />
+      {error && <p role="alert" className="mt-2 text-sm text-rose-700">{error}</p>}
+      <button type="button" disabled={!signature || submitting} onClick={() => void signTerm()} className="mt-3 rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{submitting ? 'Registrando...' : 'Confirmar e assinar'}</button>
+    </article>
+  );
+}
+
+function ResponsibilityTerms({ terms, onSigned }: { terms: ResponsibilityTerm[]; onSigned: (term: ResponsibilityTerm) => void }) {
+  const pendingTerms = terms.filter((term) => !term.assinadoEm);
+  if (!pendingTerms.length) return null;
+  return (
+    <section className="card space-y-3 border-amber-300 p-5">
+      <div><h2 className="text-lg font-semibold text-slate-900">Termos de responsabilidade</h2><p className="mt-1 text-sm text-amber-800">Há {pendingTerms.length} termo(s) aguardando sua assinatura.</p></div>
+      {pendingTerms.map((term) => <ResponsibilityTermCard key={term.id} term={term} onSigned={onSigned} />)}
+    </section>
+  );
+}
+
+function ChecklistPrintSheet({ record, technicianName, providerName, logoDataUrl }: { record: ChecklistRecord; technicianName: string; providerName: string; logoDataUrl: string | null }) {
   const filledAt = record.dataPreenchimento ?? record.createdAt;
   return (
     <article className="checklist-print-sheet">
       <header className="checklist-print-header">
-        <div className="checklist-print-brand"><span>FYBER</span><strong>LINK</strong></div>
+        <div className="checklist-print-brand">{logoDataUrl
+          ? <Image src={logoDataUrl} alt={`Logo ${providerName}`} width={200} height={54} unoptimized className="checklist-print-logo" />
+          : providerName}</div>
         <h1>CHECKLIST TÉCNICO</h1>
       </header>
       <section className="checklist-print-meta">
@@ -104,19 +166,27 @@ function ChecklistPrintSheet({ record, technicianName }: { record: ChecklistReco
         <h2>Assinatura do Técnico</h2>
         {record.assinaturaData ? <img src={record.assinaturaData} alt={`Assinatura de ${technicianName}`} /> : <div className="checklist-print-signature-empty">Sem assinatura registrada</div>}
       </section>
-      <footer>Documento gerado sob demanda pelo sistema Fyberlink. Nenhum PDF é armazenado.</footer>
+      <footer>Documento gerado sob demanda pelo sistema {providerName}. Nenhum PDF é armazenado.</footer>
     </article>
   );
 }
 
 export default function ChecklistsPage() {
   const { user, isLoading: authLoading } = useAuth();
+  const { theme } = usePlatformTheme();
   const isTechnician = Boolean(user?.roles.includes('TECNICO'));
   const isMasterAdmin = Boolean(user?.roles.includes('MASTER_ADMIN'));
   const [templates, setTemplates] = useState<Template[]>([]);
   const [pending, setPending] = useState<Pending[]>([]);
   const [history, setHistory] = useState<ChecklistRecord[]>([]);
   const [teamRecords, setTeamRecords] = useState<ChecklistRecord[]>([]);
+  const [terms, setTerms] = useState<ResponsibilityTerm[]>([]);
+  const [issuedTerms, setIssuedTerms] = useState<ResponsibilityTerm[]>([]);
+  const [termRecipients, setTermRecipients] = useState<TermRecipient[]>([]);
+  const [termDescription, setTermDescription] = useState('');
+  const [termRecipientId, setTermRecipientId] = useState('');
+  const [issuingTerm, setIssuingTerm] = useState(false);
+  const [deletingChecklistId, setDeletingChecklistId] = useState<string | null>(null);
   const [screen, setScreen] = useState<Screen>('home');
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
   const [selectedPending, setSelectedPending] = useState<Pending | null>(null);
@@ -134,14 +204,16 @@ export default function ChecklistsPage() {
   async function loadData() {
     setLoading(true);
     try {
-      const [templateData, pendingData, historyData] = await Promise.all([
+      const [templateData, pendingData, historyData, assignedTerms] = await Promise.all([
         apiFetch<Template[]>('/api/checklists/templates'),
         apiFetch<Pending[]>('/api/checklists/pendentes/me'),
         apiFetch<ChecklistRecord[]>('/api/checklists/me'),
+        apiFetch<ResponsibilityTerm[]>('/api/checklists/termos/me'),
       ]);
       setTemplates(templateData);
       setPending(pendingData);
       setHistory(historyData);
+      setTerms(assignedTerms);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Não foi possível carregar os checklists.');
     } finally {
@@ -152,7 +224,16 @@ export default function ChecklistsPage() {
   async function loadMasterDashboard() {
     setLoading(true);
     try {
-      setTeamRecords(await apiFetch<ChecklistRecord[]>('/api/checklists/relatorio'));
+      const [records, assignedTerms, issuedTermsData, recipients] = await Promise.all([
+        apiFetch<ChecklistRecord[]>('/api/checklists/relatorio'),
+        apiFetch<ResponsibilityTerm[]>('/api/checklists/termos/me'),
+        apiFetch<ResponsibilityTerm[]>('/api/checklists/termos/emitidos'),
+        apiFetch<TermRecipient[]>('/api/admin/users'),
+      ]);
+      setTeamRecords(records);
+      setTerms(assignedTerms);
+      setIssuedTerms(issuedTermsData);
+      setTermRecipients(recipients);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Não foi possível carregar o resumo dos checklists.');
     } finally {
@@ -160,10 +241,60 @@ export default function ChecklistsPage() {
     }
   }
 
+  async function loadTermsOnly() {
+    setLoading(true);
+    try {
+      setTerms(await apiFetch<ResponsibilityTerm[]>('/api/checklists/termos/me'));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Não foi possível carregar seus termos.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function issueTerm(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!termRecipientId || termDescription.trim().length < 5) {
+      setMessage('Selecione um responsável e descreva o termo.');
+      return;
+    }
+    setIssuingTerm(true);
+    setMessage(null);
+    try {
+      const created = await apiFetch<ResponsibilityTerm>('/api/checklists/termos', {
+        method: 'POST',
+        body: JSON.stringify({ usuarioDesignadoId: termRecipientId, descricao: termDescription.trim() }),
+      });
+      setIssuedTerms((current) => [created, ...current]);
+      setTermDescription('');
+      setTermRecipientId('');
+      setMessage(`Termo enviado para ${created.usuarioDesignadoNome}.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Não foi possível emitir o termo.');
+    } finally {
+      setIssuingTerm(false);
+    }
+  }
+
+  async function removePendingChecklist(record: ChecklistRecord) {
+    if (!window.confirm(`Excluir a pendência de ${record.usuario?.nome ?? 'este usuário'}? Esta ação não pode ser desfeita.`)) return;
+    setDeletingChecklistId(record.id);
+    setMessage(null);
+    try {
+      await apiFetch(`/api/checklists/${record.id}`, { method: 'DELETE' });
+      setTeamRecords((current) => current.filter((item) => item.id !== record.id));
+      setMessage('Pendência de checklist excluída.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Não foi possível excluir a pendência.');
+    } finally {
+      setDeletingChecklistId(null);
+    }
+  }
+
   useEffect(() => {
     if (isTechnician) void loadData();
     else if (isMasterAdmin) void loadMasterDashboard();
-    else setLoading(false);
+    else void loadTermsOnly();
   }, [isTechnician, isMasterAdmin]);
   useEffect(() => {
     if (!printRecord) return;
@@ -186,6 +317,12 @@ export default function ChecklistsPage() {
   const masterCorrectRecords = teamRecords.filter((record) =>
     ['PREENCHIDO', 'APROVADO'].includes(record.status)
     && !record.respostas.some((answer) => answer.respostaTipo === 'NAO_CONFORME'));
+  const assignableTermRecipients = termRecipients.filter((recipient) => recipient.id !== user?.id);
+
+  function updateSignedTerm(signedTerm: ResponsibilityTerm) {
+    setTerms((current) => current.map((term) => term.id === signedTerm.id ? signedTerm : term));
+    setMessage('Termo de responsabilidade assinado.');
+  }
 
   function resetForm() {
     setAnswers({}); setSignature(''); setObservations(''); setMessage(null);
@@ -232,18 +369,26 @@ export default function ChecklistsPage() {
   }
 
   if (authLoading || loading) return <main className="mx-auto max-w-2xl p-4 text-sm text-slate-500">Carregando checklists...</main>;
-  if (!isTechnician && !isMasterAdmin) return <main className="mx-auto max-w-2xl p-4 text-sm text-slate-600">Acesso restrito a técnicos e Master Admin.</main>;
+  if (!isTechnician && !isMasterAdmin) return (
+    <main className="mx-auto max-w-3xl space-y-4 pb-6">
+      <ResponsibilityTerms terms={terms} onSigned={updateSignedTerm} />
+      {message && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{message}</p>}
+      {!terms.some((term) => !term.assinadoEm) && <p className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-600">Acesso restrito. Você não possui termos de responsabilidade pendentes.</p>}
+    </main>
+  );
 
   if (isMasterAdmin) return (
     <main className="mx-auto max-w-5xl space-y-4 pb-6">
       <header className="px-2 py-3"><h1 className="text-2xl font-bold text-slate-900">Resumo de checklists</h1><p className="mt-1 text-sm text-slate-500">Pendências da equipe e checklists preenchidos sem não conformidades.</p></header>
       {message && <p role="status" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{message}</p>}
+      <ResponsibilityTerms terms={terms} onSigned={updateSignedTerm} />
+      <section className="card space-y-3 p-5"><div><h2 className="text-lg font-semibold text-slate-900">Emitir termo de responsabilidade</h2><p className="mt-1 text-sm text-slate-500">O usuário designado receberá o documento na fila de Checklists.</p></div><form onSubmit={issueTerm} className="grid gap-3"><label className="text-sm font-medium text-slate-700">Responsável<select required value={termRecipientId} onChange={(event) => setTermRecipientId(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5"><option value="">Selecione um usuário</option>{assignableTermRecipients.map((recipient) => <option key={recipient.id} value={recipient.id} disabled={recipient.status !== 'ATIVO'}>{recipient.nome} · {recipient.email}{recipient.status !== 'ATIVO' ? ` (${recipient.status.toLowerCase()})` : ''}</option>)}</select></label><label className="text-sm font-medium text-slate-700">Atividade ou responsabilidade<textarea required minLength={5} maxLength={20000} value={termDescription} onChange={(event) => setTermDescription(event.target.value)} className="mt-1 min-h-32 w-full rounded-lg border border-slate-300 p-3 font-normal" /></label><button type="submit" disabled={issuingTerm || !assignableTermRecipients.some((recipient) => recipient.status === 'ATIVO')} className="justify-self-start rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{issuingTerm ? 'Emitindo...' : 'Emitir termo'}</button></form>{issuedTerms.length > 0 && <div className="space-y-2 border-t border-slate-200 pt-3"><h3 className="text-sm font-semibold text-slate-800">Termos emitidos</h3>{issuedTerms.slice(0, 10).map((term) => <p key={term.id} className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-700">{term.usuarioDesignadoNome} · {term.assinadoEm ? `Assinado em ${formatDate(term.assinadoEm)}` : 'Aguardando assinatura'} · {formatDate(term.createdAt)}</p>)}</div>}</section>
       {masterPendingRecords.length || masterCorrectRecords.length ? <>
         <div className="grid gap-3 sm:grid-cols-3"><article className="rounded-lg border border-amber-200 bg-amber-50 p-4"><p className="text-sm text-amber-800">Pendentes</p><p className="mt-1 text-3xl font-bold text-amber-900">{masterPendingRecords.length - masterLateRecords.length}</p></article><article className="rounded-lg border border-rose-200 bg-rose-50 p-4"><p className="text-sm text-rose-800">Atrasados</p><p className="mt-1 text-3xl font-bold text-rose-900">{masterLateRecords.length}</p></article><article className="rounded-lg border border-emerald-200 bg-emerald-50 p-4"><p className="text-sm text-emerald-800">Preenchidos corretamente</p><p className="mt-1 text-3xl font-bold text-emerald-900">{masterCorrectRecords.length}</p></article></div>
-        {masterPendingRecords.length > 0 && <section className="card space-y-3 p-5"><h2 className="text-lg font-semibold text-slate-900">Pendências da equipe</h2><div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead><tr className="border-b border-slate-200 text-xs uppercase text-slate-500"><th className="px-3 py-2">Colaborador</th><th className="px-3 py-2">Categoria</th><th className="px-3 py-2">Prazo</th><th className="px-3 py-2">Status</th></tr></thead><tbody>{masterPendingRecords.map((record) => <tr key={record.id} className="border-b border-slate-100 last:border-0"><td className="px-3 py-2 font-medium text-slate-800">{record.usuario?.nome ?? 'Usuário'}</td><td className="px-3 py-2">{checklistCategoryLabel(record.categoria)}</td><td className="px-3 py-2">{record.janela ? windowLabels[record.janela] : 'Avulso'} · {formatDate(record.dataPrevista)}</td><td className="px-3 py-2">{record.requiresJustification ? 'Atrasado' : checklistStatusLabel(record.status)}</td></tr>)}</tbody></table></div></section>}
-        {masterCorrectRecords.length > 0 && <section className="card space-y-3 p-5"><h2 className="text-lg font-semibold text-slate-900">Preenchidos corretamente</h2><div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead><tr className="border-b border-slate-200 text-xs uppercase text-slate-500"><th className="px-3 py-2">Colaborador</th><th className="px-3 py-2">Categoria</th><th className="px-3 py-2">Data</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Ação</th></tr></thead><tbody>{masterCorrectRecords.map((record) => <tr key={record.id} className="border-b border-slate-100 last:border-0"><td className="px-3 py-2 font-medium text-slate-800">{record.usuario?.nome ?? 'Usuário'}</td><td className="px-3 py-2">{checklistCategoryLabel(record.categoria)}</td><td className="px-3 py-2">{formatDate(record.dataPreenchimento)}</td><td className="px-3 py-2">{checklistStatusLabel(record.status)}</td><td className="px-3 py-2"><button type="button" onClick={() => setPrintRecord(record)} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium">Imprimir</button></td></tr>)}</tbody></table></div></section>}
+        {masterPendingRecords.length > 0 && <section className="card space-y-3 p-5"><h2 className="text-lg font-semibold text-slate-900">Pendências da equipe</h2><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead><tr className="border-b border-slate-200 text-xs uppercase text-slate-500"><th className="px-3 py-2">Colaborador</th><th className="px-3 py-2">Categoria</th><th className="px-3 py-2">Prazo</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Ação</th></tr></thead><tbody>{masterPendingRecords.map((record) => <tr key={record.id} className="border-b border-slate-100 last:border-0"><td className="px-3 py-2 font-medium text-slate-800">{record.usuario?.nome ?? record.usuarioNome ?? 'Usuário removido'}</td><td className="px-3 py-2">{checklistCategoryLabel(record.categoria)}</td><td className="px-3 py-2">{record.janela ? windowLabels[record.janela] : 'Avulso'} · {formatDate(record.dataPrevista)}</td><td className="px-3 py-2">{record.requiresJustification ? 'Atrasado' : checklistStatusLabel(record.status)}</td><td className="px-3 py-2"><button type="button" disabled={deletingChecklistId === record.id} onClick={() => void removePendingChecklist(record)} className="rounded-md border border-rose-300 px-3 py-1.5 text-sm font-medium text-rose-700 disabled:opacity-50">{deletingChecklistId === record.id ? 'Excluindo...' : 'Excluir pendência'}</button></td></tr>)}</tbody></table></div></section>}
+        {masterCorrectRecords.length > 0 && <section className="card space-y-3 p-5"><h2 className="text-lg font-semibold text-slate-900">Preenchidos corretamente</h2><div className="overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead><tr className="border-b border-slate-200 text-xs uppercase text-slate-500"><th className="px-3 py-2">Colaborador</th><th className="px-3 py-2">Categoria</th><th className="px-3 py-2">Data</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Ação</th></tr></thead><tbody>{masterCorrectRecords.map((record) => <tr key={record.id} className="border-b border-slate-100 last:border-0"><td className="px-3 py-2 font-medium text-slate-800">{record.usuario?.nome ?? record.usuarioNome ?? 'Usuário removido'}</td><td className="px-3 py-2">{checklistCategoryLabel(record.categoria)}</td><td className="px-3 py-2">{formatDate(record.dataPreenchimento)}</td><td className="px-3 py-2">{checklistStatusLabel(record.status)}</td><td className="px-3 py-2"><button type="button" onClick={() => setPrintRecord(record)} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium">Imprimir</button></td></tr>)}</tbody></table></div></section>}
       </> : <p className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-600">Não há checklists pendentes ou preenchidos corretamente.</p>}
-      {printRecord && <ChecklistPrintSheet record={printRecord} technicianName={printRecord.usuario?.nome ?? 'Colaborador'} />}
+      {printRecord && <ChecklistPrintSheet record={printRecord} technicianName={printRecord.usuario?.nome ?? 'Colaborador'} providerName={theme.providerName} logoDataUrl={theme.logoDataUrl} />}
     </main>
   );
 
@@ -287,6 +432,7 @@ export default function ChecklistsPage() {
   return (
     <main className="mx-auto max-w-6xl space-y-4 pb-6">
       <header className="px-2 py-3"><h1 className="text-2xl font-bold text-slate-900">Checklist Técnico</h1></header>
+      <ResponsibilityTerms terms={terms} onSigned={updateSignedTerm} />
       <section className="card p-5"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Checklists Pendentes</p><p className="mt-1 text-4xl font-bold text-slate-900">{actionablePending.length}</p></div>{actionablePending.length ? <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">Preencha cada checklist no horário indicado. Os horários vencidos precisam de justificativa.</p> : <p className="mt-4 text-sm text-slate-600">Nenhum checklist pendente neste momento.</p>}</section>
       {message && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p>}
       <section className="card space-y-3 p-5"><div><h2 className="text-lg font-semibold text-slate-900">Meu histórico individual</h2><p className="mt-1 text-sm text-slate-500">Seus registros de ferramentas, veículo e EPIs.</p></div>{history.length ? <div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead><tr className="border-b border-slate-200 text-xs uppercase text-slate-500"><th className="px-3 py-2">Categoria</th><th className="px-3 py-2">Data</th><th className="px-3 py-2">Janela</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Ações</th></tr></thead><tbody>{history.map((record) => <tr key={record.id} className="border-b border-slate-100 last:border-0"><td className="px-3 py-2">{checklistCategoryLabel(record.categoria)}</td><td className="px-3 py-2">{formatDate(record.dataPreenchimento ?? record.dataPrevista)}</td><td className="px-3 py-2">{record.janela ? windowLabels[record.janela] : 'Extra'}</td><td className="px-3 py-2">{checklistStatusLabel(record.status)}</td><td className="px-3 py-2">{['PREENCHIDO', 'APROVADO', 'REPROVADO'].includes(record.status) ? <button type="button" onClick={() => setPrintRecord(record)} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium">Imprimir</button> : <span className="text-xs text-slate-400">Indisponível</span>}</td></tr>)}</tbody></table></div> : <p className="text-sm text-slate-500">Nenhum checklist registrado ainda.</p>}</section>
@@ -298,7 +444,7 @@ export default function ChecklistsPage() {
           return <div key={slot.id} className="flex flex-col gap-2 rounded-lg border border-slate-200 p-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-medium text-slate-800">{windowLabels[slot.janela]}</p><p className="text-xs text-slate-500">Previsto: {formatDate(slot.dataPrevista)}</p></div><button type="button" disabled={!slot.canFillNow && !slot.requiresJustification} onClick={() => openChecklistSlot(slot)} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500">{actionLabel}</button></div>;
         })}</section>;
       })}
-      {printRecord && <ChecklistPrintSheet record={printRecord} technicianName={printRecord.usuario?.nome ?? user?.nome ?? 'Colaborador'} />}
+      {printRecord && <ChecklistPrintSheet record={printRecord} technicianName={printRecord.usuario?.nome ?? user?.nome ?? 'Colaborador'} providerName={theme.providerName} logoDataUrl={theme.logoDataUrl} />}
     </main>
   );
 }

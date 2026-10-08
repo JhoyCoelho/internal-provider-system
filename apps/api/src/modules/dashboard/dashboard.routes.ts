@@ -4,5 +4,5 @@ import { dashboardSummaryController, resolveChecklistResponseController } from '
 
 const router = Router();
 router.get('/', requirePermissions({ anyOf: ['REPORTS_READ', 'ORDERS_READ', 'CHECKLIST_READ'] }), dashboardSummaryController);
-router.patch('/checklist-responses/:responseId/resolve', requireRole('TECNICO', 'MASTER_ADMIN'), requirePermissions('CHECKLIST_WRITE'), resolveChecklistResponseController);
+router.patch('/checklist-responses/:responseId/resolve', requireRole('MASTER_ADMIN'), requirePermissions('CHECKLIST_WRITE'), resolveChecklistResponseController);
 export default router;

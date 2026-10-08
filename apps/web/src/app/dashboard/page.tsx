@@ -10,7 +10,7 @@ type ChecklistIssue = {
   valorBooleano: boolean | null;
   registradoEm: string;
   template: { pergunta: string };
-  checklist: { id: string; categoria: string; dataPreenchimento: string; justificativaAtraso: string | null; usuario: { nome: string } };
+  checklist: { id: string; categoria: string; dataPreenchimento: string; justificativaAtraso: string | null; usuarioNome: string | null; usuario: { nome: string } | null };
 };
 
 type DashboardSummary = {
@@ -77,21 +77,6 @@ export default function DashboardPage() {
     }
   }
 
-  function exportChecklistReport() {
-    if (!summary) return;
-    const rows: (string | number)[][] = [
-      ['Relatório de Checklists', dateRangeLabel(from, to)],
-      ['Pendentes', summary.checklists.pending],
-      ['Preenchidos', summary.checklists.filled],
-      ['Preenchidos em atraso', summary.checklists.filledLate],
-      ['Itens a resolver', summary.checklists.issuesToResolve.length],
-      [],
-      ['Técnico', 'Categoria', 'Item', 'Resposta', 'Observação', 'Data'],
-      ...summary.checklists.issuesToResolve.map((issue) => [issue.checklist.usuario.nome, issue.checklist.categoria, issue.template.pergunta, issue.valorBooleano === false ? 'Faltando' : 'Danificado', issue.valorTexto ?? '', new Date(issue.registradoEm).toLocaleString('pt-BR')]),
-    ];
-    downloadCsv('relatorio-checklists.csv', rows);
-  }
-
   function exportRemovalReport() {
     if (!summary) return;
     downloadCsv('relatorio-remocoes.csv', [
@@ -130,13 +115,13 @@ export default function DashboardPage() {
       {loading && <p className="px-3 text-sm text-slate-500">Atualizando indicadores...</p>}
 
       {isTechnician && <section className="card p-5">
-        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-xl font-bold text-slate-900">Checklists</h2><p className="mt-1 text-sm text-slate-500">Pendências, preenchimentos e itens que precisam de atenção.</p></div><button type="button" disabled={!summary} onClick={exportChecklistReport} className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 disabled:opacity-50">Exportar relatório</button></div>
+        <div className="mb-5"><h2 className="text-xl font-bold text-slate-900">Checklists</h2><p className="mt-1 text-sm text-slate-500">Pendências, preenchimentos e itens que precisam de atenção.</p></div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{checklistMetrics.map((metric) => <article key={metric.label} className="rounded-xl border border-slate-200 p-4"><p className="text-sm text-slate-500">{metric.label}</p><p className={`mt-2 text-3xl font-bold ${metric.color}`}>{metric.value}</p></article>)}</div>
-        <div className="mt-5"><h3 className="font-semibold text-slate-800">Itens a resolver</h3>{!summary || summary.checklists.issuesToResolve.length === 0 ? <p className="mt-2 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">Nenhum item pendente de resolução.</p> : <div className="mt-3 space-y-3">{summary.checklists.issuesToResolve.map((issue) => <article key={issue.id} className="flex flex-col gap-3 rounded-xl border border-rose-200 bg-rose-50/50 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold text-slate-900">{issue.template.pergunta}</p><p className="mt-1 text-sm text-slate-600">{issue.checklist.categoria} · {issue.checklist.usuario.nome} · {issue.valorBooleano === false ? 'Faltando' : 'Danificado'}</p>{issue.valorTexto && <p className="mt-1 text-sm text-slate-700">{issue.valorTexto}</p>}</div><button type="button" disabled={resolvingId === issue.id} onClick={() => resolveIssue(issue)} className="shrink-0 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60">{resolvingId === issue.id ? 'Salvando...' : 'Marcar resolvido'}</button></article>)}</div>}</div>
+        <div className="mt-5"><h3 className="font-semibold text-slate-800">Itens a resolver</h3>{!summary || summary.checklists.issuesToResolve.length === 0 ? <p className="mt-2 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">Nenhum item pendente de resolução.</p> : <div className="mt-3 space-y-3">{summary.checklists.issuesToResolve.map((issue) => <article key={issue.id} className="flex flex-col gap-3 rounded-xl border border-rose-200 bg-rose-50/50 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold text-slate-900">{issue.template.pergunta}</p><p className="mt-1 text-sm text-slate-600">{issue.checklist.categoria} · {issue.checklist.usuario?.nome ?? issue.checklist.usuarioNome ?? 'Usuário removido'} · {issue.valorBooleano === false ? 'Faltando' : 'Danificado'}</p>{issue.valorTexto && <p className="mt-1 text-sm text-slate-700">{issue.valorTexto}</p>}</div></article>)}</div>}</div>
       </section>}
 
       <section className="card p-5">
-        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-xl font-bold text-slate-900">Remoções</h2><p className="mt-1 text-sm text-slate-500">Resumo da fila e das tentativas de remoção.</p></div><button type="button" disabled={!summary} onClick={exportRemovalReport} className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 disabled:opacity-50">Exportar relatório</button></div>
+        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-xl font-bold text-slate-900">Remoções</h2><p className="mt-1 text-sm text-slate-500">Resumo da fila e das tentativas de remoção.</p></div>{!isTechnician && <button type="button" disabled={!summary} onClick={exportRemovalReport} className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 disabled:opacity-50">Exportar relatório</button>}</div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{removalMetrics.map((metric) => <article key={metric.label} className="rounded-xl border border-slate-200 p-4"><p className="text-sm text-slate-500">{metric.label}</p><p className={`mt-2 text-3xl font-bold ${metric.color}`}>{metric.value}</p></article>)}<article className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4"><p className="text-sm text-slate-500">Rotas de remoção</p><p className="mt-2 text-lg font-bold text-slate-400">EM BREVE</p></article></div>
       </section>
     </main>

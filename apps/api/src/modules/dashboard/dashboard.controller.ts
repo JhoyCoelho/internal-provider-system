@@ -26,7 +26,7 @@ export async function dashboardSummaryController(req: Request, res: Response) {
 export async function resolveChecklistResponseController(req: Request, res: Response) {
   const user = req.user;
   if (!user) return res.status(401).json({ message: 'Usuário não autenticado.' });
-  const canResolveAny = user.roles.some((role) => ['MASTER_ADMIN', 'SUPERVISOR', 'COORDENADOR'].includes(role));
+  const canResolveAny = user.roles.includes('MASTER_ADMIN');
   const userId = user.id;
   try { return res.status(200).json(await resolveChecklistResponse(req.params.responseId, userId, canResolveAny)); }
   catch (error) { return res.status(400).json({ message: error instanceof Error ? error.message : 'Erro ao resolver item.' }); }

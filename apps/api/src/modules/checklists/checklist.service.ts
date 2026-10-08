@@ -115,7 +115,7 @@ export async function createChecklistTemplate(input: ChecklistTemplateInput) {
 
 export async function createChecklist(usuarioId: string, answers: ChecklistAnswerInput[], assinaturaData: string, checklistId: string, categoria?: string) {
   if (!checklistId) throw new Error('Selecione o checklist agendado que deseja preencher.');
-  const pending = await prisma.checklist.findFirst({ where: { id: checklistId, usuarioId, status: { in: [StatusChecklist.PENDENTE, StatusChecklist.EM_ATRASO] } } });
+  const pending = await prisma.checklist.findFirst({ where: { id: checklistId, usuarioId, excluidoEm: null, status: { in: [StatusChecklist.PENDENTE, StatusChecklist.EM_ATRASO] } } });
   if (!pending) throw new Error('Este checklist pendente não pertence ao usuário ou já foi preenchido. Atualize a tela e tente novamente.');
   if (pending.status === StatusChecklist.PENDENTE && !isWindowOpen(pending.janela, pending.dataAgenda)) {
     throw new Error('A janela de preenchimento encerrou. Envie a justificativa para preencher este checklist em atraso.');
@@ -143,6 +143,7 @@ export async function listPendingChecklistsByUser(usuarioId: string) {
   const rows = await prisma.checklist.findMany({
     where: {
       usuarioId,
+      excluidoEm: null,
       dataAgenda: { lte: dataAgenda },
       status: { in: [StatusChecklist.PENDENTE, StatusChecklist.EM_ATRASO, StatusChecklist.PENDENTE_APROVACAO] },
     },
@@ -157,7 +158,7 @@ export async function listPendingChecklistsByUser(usuarioId: string) {
 }
 
 export async function justifyLateChecklist(usuarioId: string, checklistId: string, motivo: string, descricao: string, assinaturaData: string) {
-  const pending = await prisma.checklist.findFirst({ where: { id: checklistId, usuarioId, status: { in: [StatusChecklist.PENDENTE, StatusChecklist.PENDENTE_APROVACAO] } } });
+  const pending = await prisma.checklist.findFirst({ where: { id: checklistId, usuarioId, excluidoEm: null, status: { in: [StatusChecklist.PENDENTE, StatusChecklist.PENDENTE_APROVACAO] } } });
   if (!pending) throw new Error('Checklist pendente não encontrado para este usuário. Atualize a lista e selecione uma pendência sua.');
   if (pending.status === StatusChecklist.PENDENTE && isWindowOpen(pending.janela, pending.dataAgenda)) throw new Error('Este checklist ainda está dentro do horário normal de preenchimento.');
   if (pending.status === StatusChecklist.PENDENTE && !isWindowPast(pending.janela, pending.dataAgenda)) throw new Error('O horário deste checklist ainda não começou.');
@@ -197,7 +198,7 @@ export async function createLateChecklist(usuarioId: string, answers: ChecklistA
 
 export async function listChecklistsByUser(usuarioId: string) {
   return prisma.checklist.findMany({
-    where: { usuarioId },
+    where: { usuarioId, excluidoEm: null },
     orderBy: [{ createdAt: 'desc' }],
     include: {
       respostas: {
@@ -210,7 +211,7 @@ export async function listChecklistsByUser(usuarioId: string) {
 }
 
 export async function approveChecklist(checklistId: string, aprovadorId: string) {
-  const checklist = await prisma.checklist.findUnique({ where: { id: checklistId } });
+  const checklist = await prisma.checklist.findFirst({ where: { id: checklistId, excluidoEm: null } });
 
   if (!checklist) {
     throw new Error('Checklist não encontrado.');
@@ -226,7 +227,7 @@ export async function approveChecklist(checklistId: string, aprovadorId: string)
 }
 
 export async function rejectChecklist(checklistId: string, aprovadorId: string, motivo: string) {
-  const checklist = await prisma.checklist.findUnique({ where: { id: checklistId } });
+  const checklist = await prisma.checklist.findFirst({ where: { id: checklistId, excluidoEm: null } });
 
   if (!checklist) {
     throw new Error('Checklist não encontrado.');
@@ -244,7 +245,7 @@ export async function rejectChecklist(checklistId: string, aprovadorId: string, 
 
 export async function getChecklistHistory(usuarioId: string) {
   return prisma.checklist.findMany({
-    where: { usuarioId },
+    where: { usuarioId, excluidoEm: null },
     orderBy: [{ createdAt: 'desc' }],
     select: {
       id: true,
@@ -286,13 +287,14 @@ export async function listChecklistReport(from?: Date, to?: Date) {
   await Promise.all(technicians.map(({ id }) => ensureDailyChecklistSlots(id)));
 
   const rows = await prisma.checklist.findMany({
-    where: from || to ? {
-      dataAgenda: {
+    where: {
+      excluidoEm: null,
+      ...(from || to ? { dataAgenda: {
         not: null,
         ...(from ? { gte: from } : {}),
         ...(to ? { lte: to } : {}),
-      },
-    } : {},
+      } } : {}),
+    },
     orderBy: [{ dataAgenda: 'desc' }, { createdAt: 'desc' }],
     take: 2000,
     include: {
@@ -314,9 +316,7 @@ export async function listChecklistReport(from?: Date, to?: Date) {
 
 export async function listPendingChecklistForSupervisor() {
   return prisma.checklist.findMany({
-    where: {
-      status: StatusChecklist.PENDENTE_APROVACAO,
-    },
+    where: { status: StatusChecklist.PENDENTE_APROVACAO, excluidoEm: null },
     include: {
       usuario: {
         select: {

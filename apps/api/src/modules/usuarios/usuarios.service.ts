@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs';
-import { Prisma, RoleCode, StatusUsuario } from '@prisma/client';
+import { Prisma, RoleCode, StatusChecklist, StatusUsuario } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
 
 const managedRoles = [RoleCode.MASTER_ADMIN, RoleCode.ADMIN, RoleCode.TECNICO] as const;
@@ -68,6 +68,7 @@ export async function createManagedUser(input: {
     await transaction.logAuditoria.create({
       data: {
         usuarioId: input.actorId,
+        autorMasterAdmin: true,
         acao: 'USUARIO_CRIADO',
         entidade: 'USUARIO',
         entidadeId: user.id,
@@ -125,6 +126,7 @@ export async function updateManagedUser(id: string, input: {
     await transaction.logAuditoria.create({
       data: {
         usuarioId: input.actorId,
+        autorMasterAdmin: true,
         acao: passwordHash ? 'USUARIO_E_CREDENCIAIS_ATUALIZADOS' : 'USUARIO_ATUALIZADO',
         entidade: 'USUARIO',
         entidadeId: id,
@@ -141,5 +143,50 @@ export async function updateManagedUser(id: string, input: {
 
     const updated = await transaction.usuario.findUniqueOrThrow({ where: { id }, select: safeUserSelect });
     return presentUser(updated);
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+}
+
+export async function deleteManagedUser(id: string, actorId: string) {
+  if (id === actorId) throw new Error('Não é possível excluir o próprio usuário.');
+
+  return prisma.$transaction(async (transaction) => {
+    const existing = await transaction.usuario.findUnique({
+      where: { id },
+      include: { roles: { include: { perfil: { select: { code: true } } } } },
+    });
+    if (!existing) return null;
+
+    const isActiveMaster = existing.status === StatusUsuario.ATIVO
+      && existing.roles.some(({ perfil }) => perfil.code === RoleCode.MASTER_ADMIN);
+    if (isActiveMaster) {
+      const activeMasters = await transaction.usuario.count({
+        where: {
+          status: StatusUsuario.ATIVO,
+          roles: { some: { perfil: { is: { code: RoleCode.MASTER_ADMIN, active: true } } } },
+        },
+      });
+      if (activeMasters <= 1) throw new Error('Não é possível excluir o último MASTER ADMIN ativo.');
+    }
+
+    const deleted = presentUser(await transaction.usuario.findUniqueOrThrow({ where: { id }, select: safeUserSelect }));
+    await transaction.checklist.updateMany({
+      where: { usuarioId: id, status: { in: [StatusChecklist.PREENCHIDO, StatusChecklist.APROVADO, StatusChecklist.REPROVADO] } },
+      data: { usuarioId: null, usuarioNome: existing.nome },
+    });
+    const removedPendingChecklists = await transaction.checklist.deleteMany({
+      where: { usuarioId: id, status: { in: [StatusChecklist.PENDENTE, StatusChecklist.EM_ATRASO, StatusChecklist.PENDENTE_APROVACAO] } },
+    });
+    await transaction.usuario.delete({ where: { id } });
+    await transaction.logAuditoria.create({
+      data: {
+        usuarioId: actorId,
+        autorMasterAdmin: true,
+        acao: 'USUARIO_EXCLUIDO',
+        entidade: 'USUARIO',
+        entidadeId: id,
+        valorAntigo: { nome: existing.nome, email: existing.email, role: existing.roles[0]?.perfil.code ?? null, status: existing.status, pendenciasChecklistExcluidas: removedPendingChecklists.count },
+      },
+    });
+    return deleted;
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }

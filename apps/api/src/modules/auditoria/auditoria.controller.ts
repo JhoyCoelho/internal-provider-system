@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
-import { createAuditLog, listAuditLogs, getAuditLogById } from './auditoria.service.js';
+import { createAuditLog, getAuditFilterOptions, listAuditLogs, getAuditLogById } from './auditoria.service.js';
 
 const createAuditLogSchema = z.object({
   acao: z.string().min(3, 'Ação obrigatória.'),
@@ -15,7 +15,6 @@ const createAuditLogSchema = z.object({
 const filtersSchema = z.object({
   entidade: z.string().optional(),
   usuarioId: z.string().uuid().optional(),
-  colaborador: z.string().optional(),
   acao: z.string().optional(),
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
@@ -34,6 +33,7 @@ export async function createAuditLogController(req: Request, res: Response) {
   try {
     const log = await createAuditLog({
       usuarioId: req.user?.id,
+      autorMasterAdmin: req.user?.roles.includes('MASTER_ADMIN'),
       ...parsed.data,
       ipAddress: req.ip?.toString() ?? null,
       userAgent: req.headers['user-agent'] ?? null,
@@ -45,6 +45,11 @@ export async function createAuditLogController(req: Request, res: Response) {
       message: 'Erro ao registrar log de auditoria.',
     });
   }
+}
+
+export async function getAuditFilterOptionsController(_req: Request, res: Response) {
+  try { return res.status(200).json(await getAuditFilterOptions()); }
+  catch { return res.status(500).json({ message: 'Não foi possível carregar as opções de auditoria.' }); }
 }
 
 export async function listAuditLogsController(req: Request, res: Response) {

@@ -12,6 +12,13 @@ import {
   submitChecklistController,
   submitLateChecklistController,
 } from './checklist.controller.js';
+import {
+  createTermController,
+  deletePendingChecklistController,
+  listAssignedTermsController,
+  listIssuedTermsController,
+  signTermController,
+} from './termos.controller.js';
 
 const router = Router();
 
@@ -51,6 +58,12 @@ router.get(
 );
 
 router.get('/relatorio', requireRole('MASTER_ADMIN'), requirePermissions('APPROVE_LATE_CHECKLIST'), listChecklistReportController);
+
+router.get('/termos/me', listAssignedTermsController);
+router.get('/termos/emitidos', requireRole('MASTER_ADMIN'), listIssuedTermsController);
+router.post('/termos', requireRole('MASTER_ADMIN'), requirePermissions('CHECKLIST_WRITE'), createTermController);
+router.post('/termos/:termId/assinar', signTermController);
+router.delete('/:checklistId', requireRole('MASTER_ADMIN'), requirePermissions('CHECKLIST_WRITE'), deletePendingChecklistController);
 
 router.get('/pendentes/me', requireRole('TECNICO'), requirePermissions('CHECKLIST_READ'), listMyPendingChecklistsController);
 

@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from 'react';
 import { apiFetch } from '../../lib/api';
+import { useAuth } from '../../providers/auth-provider';
 
 type AuditLog = {
   id: string;
@@ -12,16 +13,10 @@ type AuditLog = {
   usuario: { id: string; nome: string; email: string } | null;
 };
 
-type Filters = { entidade: string; colaborador: string; acao: string; from: string; to: string };
-const emptyFilters: Filters = { entidade: '', colaborador: '', acao: '', from: '', to: '' };
-const entities = [
-  { value: '', label: 'Todos os módulos' },
-  { value: 'REMOCAO', label: 'Remoções' },
-  { value: 'CHECKLIST', label: 'Checklists' },
-  { value: 'CAIXA', label: 'Caixa' },
-  { value: 'USUARIO', label: 'Usuários' },
-  { value: 'PERMISSAO', label: 'Permissões' },
-];
+type AuditFilters = { modules: string[]; actions: string[]; collaborators: { id: string; nome: string }[] };
+type Filters = { entidade: string; usuarioId: string; acao: string; from: string; to: string };
+const emptyFilters: Filters = { entidade: '', usuarioId: '', acao: '', from: '', to: '' };
+const moduleLabels: Record<string, string> = { REMOCAO: 'Remoções', CHECKLIST: 'Checklists', CAIXA: 'Caixa', USUARIO: 'Usuários', PERMISSAO: 'Permissões', CONFIGURACAO_PLATAFORMA: 'Configuração da plataforma' };
 
 function downloadLogs(logs: AuditLog[]) {
   const rows = [
@@ -38,9 +33,12 @@ function downloadLogs(logs: AuditLog[]) {
 }
 
 export default function AuditoriaPage() {
+  const { user, isLoading: authLoading } = useAuth();
+  const isMasterAdmin = Boolean(user?.roles.includes('MASTER_ADMIN'));
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [filters, setFilters] = useState<Filters>(emptyFilters);
   const [applied, setApplied] = useState<Filters>(emptyFilters);
+  const [options, setOptions] = useState<AuditFilters>({ modules: [], actions: [], collaborators: [] });
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -50,8 +48,8 @@ export default function AuditoriaPage() {
     try {
       const params = new URLSearchParams();
       if (applied.entidade) params.set('entidade', applied.entidade);
-      if (applied.colaborador.trim()) params.set('colaborador', applied.colaborador.trim());
-      if (applied.acao.trim()) params.set('acao', applied.acao.trim());
+      if (applied.usuarioId) params.set('usuarioId', applied.usuarioId);
+      if (applied.acao) params.set('acao', applied.acao);
       if (applied.from) params.set('from', new Date(`${applied.from}T00:00:00`).toISOString());
       if (applied.to) params.set('to', new Date(`${applied.to}T23:59:59.999`).toISOString());
       setLogs(await apiFetch<AuditLog[]>(`/api/auditoria${params.size ? `?${params}` : ''}`));
@@ -62,12 +60,19 @@ export default function AuditoriaPage() {
     }
   }
 
-  useEffect(() => { void load(); }, [applied]);
+  useEffect(() => {
+    if (!isMasterAdmin) return;
+    void apiFetch<AuditFilters>('/api/auditoria/filtros').then(setOptions).catch((error) => setMessage(error instanceof Error ? error.message : 'Não foi possível carregar os filtros.'));
+  }, [isMasterAdmin]);
+  useEffect(() => { if (isMasterAdmin) void load(); }, [applied, isMasterAdmin]);
 
   function applyFilters(event: FormEvent) {
     event.preventDefault();
     setApplied(filters);
   }
+
+  if (authLoading) return <main className="p-4 text-sm text-slate-500">Carregando auditoria...</main>;
+  if (!isMasterAdmin) return <main className="card p-6"><h1 className="text-xl font-bold text-slate-900">Acesso restrito</h1><p className="mt-2 text-sm text-slate-600">A Auditoria está disponível somente para MASTER ADMIN.</p></main>;
 
   return (
     <main className="mx-auto max-w-6xl space-y-4 pb-6">
@@ -77,9 +82,9 @@ export default function AuditoriaPage() {
       </header>
 
       <form onSubmit={applyFilters} className="card grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
-        <label className="text-sm font-medium text-slate-700">Módulo<select value={filters.entidade} onChange={(event) => setFilters((current) => ({ ...current, entidade: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5"><option value="">Todos os módulos</option>{entities.filter((item) => item.value).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
-        <label className="text-sm font-medium text-slate-700">Colaborador<input value={filters.colaborador} onChange={(event) => setFilters((current) => ({ ...current, colaborador: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5" placeholder="Nome do colaborador" /></label>
-        <label className="text-sm font-medium text-slate-700">Ação<input value={filters.acao} onChange={(event) => setFilters((current) => ({ ...current, acao: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5" placeholder="Filtrar pela ação" /></label>
+        <label className="text-sm font-medium text-slate-700">Módulo<select value={filters.entidade} onChange={(event) => setFilters((current) => ({ ...current, entidade: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5"><option value="">Todos os módulos</option>{options.modules.map((module) => <option key={module} value={module}>{moduleLabels[module] ?? module}</option>)}</select></label>
+        <label className="text-sm font-medium text-slate-700">Colaborador<select value={filters.usuarioId} onChange={(event) => setFilters((current) => ({ ...current, usuarioId: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5"><option value="">Todos os colaboradores</option>{options.collaborators.map((collaborator) => <option key={collaborator.id} value={collaborator.id}>{collaborator.nome}</option>)}</select></label>
+        <label className="text-sm font-medium text-slate-700">Ação<select value={filters.acao} onChange={(event) => setFilters((current) => ({ ...current, acao: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5"><option value="">Todas as ações</option>{options.actions.map((action) => <option key={action} value={action}>{action.replaceAll('_', ' ')}</option>)}</select></label>
         <label className="text-sm font-medium text-slate-700">Data inicial<input type="date" value={filters.from} max={filters.to || undefined} onChange={(event) => setFilters((current) => ({ ...current, from: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5" /></label>
         <label className="text-sm font-medium text-slate-700">Data final<input type="date" value={filters.to} min={filters.from || undefined} onChange={(event) => setFilters((current) => ({ ...current, to: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5" /></label>
         <div className="flex gap-2 self-end"><button type="submit" className="flex-1 rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white">Aplicar filtros</button><button type="button" onClick={() => { setFilters(emptyFilters); setApplied(emptyFilters); }} className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-medium text-slate-600">Limpar</button></div>

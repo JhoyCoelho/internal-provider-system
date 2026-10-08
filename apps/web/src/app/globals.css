@@ -8,6 +8,11 @@
   --color-brand-700: color-mix(in srgb, var(--app-brand-primary) 82%, black);
   --color-brand-900: color-mix(in srgb, var(--app-brand-primary) 48%, black);
   --color-accent: var(--app-brand-accent);
+  --color-slate-900: var(--app-text-primary);
+  --color-slate-800: var(--app-text-primary);
+  --color-slate-700: var(--app-text-primary);
+  --color-slate-600: var(--app-text-secondary);
+  --color-slate-500: var(--app-text-secondary);
   --color-slate-950: #020817;
   --shadow-soft: 0 8px 24px rgb(15 23 42 / 8%);
 }
@@ -18,6 +23,8 @@
   --app-brand-accent: #0f766e;
   --app-page-background: #f8fafc;
   --app-surface-background: #ffffff;
+  --app-text-primary: #0f172a;
+  --app-text-secondary: #475569;
   --background: var(--app-page-background);
   --foreground: #0f172a;
 }
@@ -172,6 +179,13 @@ body {
 
   .checklist-print-brand strong {
     color: #0f766e;
+  }
+
+  .checklist-print-logo {
+    width: auto;
+    max-width: 180px;
+    max-height: 48px;
+    object-fit: contain;
   }
 
   .checklist-print-header h1 {

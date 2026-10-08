@@ -1,30 +1,64 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { apiFetch } from '../lib/api';
 import { useAuth } from '../providers/auth-provider';
+import { usePlatformTheme } from '../providers/platform-theme-provider';
 
-const items: { href: string; label: string; permission?: string; roles?: string[]; role?: string; disabled?: boolean }[] = [
+const items: { href: string; label: string; permission?: string; roles?: string[]; role?: string; disabled?: boolean; allowPendingTerm?: boolean }[] = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/dashboard/remocao', label: 'Remoção', permission: 'ORDERS_READ' },
-  { href: '/dashboard/checklists', label: 'Checklists', roles: ['TECNICO', 'MASTER_ADMIN'], permission: 'CHECKLIST_READ' },
+  { href: '/dashboard/checklists', label: 'Checklists', roles: ['TECNICO', 'MASTER_ADMIN'], permission: 'CHECKLIST_READ', allowPendingTerm: true },
   { href: '/dashboard/caixa', label: 'Caixa', permission: 'CASH_READ', disabled: true },
-  { href: '/dashboard/auditoria', label: 'Auditoria', permission: 'AUDIT_READ' },
+  { href: '/dashboard/auditoria', label: 'Auditoria', roles: ['MASTER_ADMIN'], permission: 'AUDIT_READ' },
   { href: '/dashboard/administracao', label: 'Administração', role: 'MASTER_ADMIN' },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
-  const visibleItems = items.filter((item) =>
-    (!item.permission || user?.permissions.includes(item.permission))
-    && (!item.roles || item.roles.some((role) => user?.roles.includes(role)))
-    && (!item.role || user?.roles.includes(item.role)));
+  const { theme } = usePlatformTheme();
+  const [hasPendingTerm, setHasPendingTerm] = useState(false);
+
+  useEffect(() => {
+    if (!user || user.roles.includes('TECNICO') || user.roles.includes('MASTER_ADMIN')) {
+      setHasPendingTerm(false);
+      return;
+    }
+    let active = true;
+    const refreshPendingTerms = () => {
+      void apiFetch<{ assinadoEm: string | null }[]>('/api/checklists/termos/me')
+        .then((terms) => { if (active) setHasPendingTerm(terms.some((term) => !term.assinadoEm)); })
+        .catch(() => { if (active) setHasPendingTerm(false); });
+    };
+    refreshPendingTerms();
+    const interval = window.setInterval(refreshPendingTerms, 60_000);
+    window.addEventListener('focus', refreshPendingTerms);
+    window.addEventListener('responsibility-terms-updated', refreshPendingTerms);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', refreshPendingTerms);
+      window.removeEventListener('responsibility-terms-updated', refreshPendingTerms);
+    };
+  }, [user]);
+
+  const visibleItems = items.filter((item) => {
+    const allowedByRole = (!item.permission || user?.permissions.includes(item.permission))
+      && (!item.roles || item.roles.some((role) => user?.roles.includes(role)))
+      && (!item.role || user?.roles.includes(item.role));
+    return allowedByRole || Boolean(item.allowPendingTerm && hasPendingTerm);
+  });
 
   return (
     <aside className="platform-surface h-full w-full rounded-3xl border border-slate-200 p-4 shadow-soft">
       <div className="mb-6 px-3 py-2">
-        <h2 className="text-xl font-bold text-slate-800">Fyberlink</h2>
+        {theme.logoDataUrl
+          ? <Image src={theme.logoDataUrl} alt={`Logo ${theme.providerName}`} width={180} height={72} unoptimized className="max-h-16 w-auto object-contain" />
+          : <h2 className="text-xl font-bold text-slate-800">{theme.providerName}</h2>}
       </div>
 
       <nav className="space-y-2">

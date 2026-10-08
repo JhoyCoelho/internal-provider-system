@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import { Prisma, StatusUsuario } from '@prisma/client';
 import { z } from 'zod';
-import { createManagedUser, listManagedUsers, updateManagedUser } from './usuarios.service.js';
+import { createManagedUser, deleteManagedUser, listManagedUsers, updateManagedUser } from './usuarios.service.js';
 
 const roleSchema = z.enum(['MASTER_ADMIN', 'ADMIN', 'TECNICO']);
 const passwordSchema = z.string()
@@ -65,5 +65,19 @@ export async function updateManagedUserController(req: Request, res: Response) {
     if (isDuplicateEmail(error)) return res.status(409).json({ message: 'Já existe um usuário com este e-mail.' });
     if (isTransactionConflict(error)) return res.status(409).json({ message: 'Outro administrador alterou usuários ao mesmo tempo. Atualize a lista e tente novamente.' });
     return res.status(400).json({ message: error instanceof Error ? error.message : 'Não foi possível atualizar o usuário.' });
+  }
+}
+
+export async function deleteManagedUserController(req: Request, res: Response) {
+  if (!req.user?.id) return res.status(401).json({ message: 'Usuário não autenticado.' });
+  const parsedId = userIdSchema.safeParse(req.params.id);
+  if (!parsedId.success) return res.status(400).json({ message: 'Identificador de usuário inválido.' });
+
+  try {
+    const user = await deleteManagedUser(parsedId.data, req.user.id);
+    return user ? res.status(200).json(user) : res.status(404).json({ message: 'Usuário não encontrado.' });
+  } catch (error) {
+    if (isTransactionConflict(error)) return res.status(409).json({ message: 'Outro administrador alterou usuários ao mesmo tempo. Atualize a lista e tente novamente.' });
+    return res.status(400).json({ message: error instanceof Error ? error.message : 'Não foi possível excluir o usuário.' });
   }
 }

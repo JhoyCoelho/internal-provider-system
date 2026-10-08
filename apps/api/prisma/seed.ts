@@ -26,7 +26,6 @@ const rolePermissions: Record<RoleCode, PermissionCode[]> = {
   [RoleCode.ADMIN]: [
     PermissionCode.USERS_READ,
     PermissionCode.REPORTS_READ,
-    PermissionCode.AUDIT_READ,
     PermissionCode.ORDERS_READ,
     PermissionCode.ORDERS_WRITE,
     PermissionCode.ORDERS_STATUS_WRITE,
@@ -35,7 +34,6 @@ const rolePermissions: Record<RoleCode, PermissionCode[]> = {
     PermissionCode.APPROVE_CLOSURE,
   ],
   [RoleCode.SUPERVISOR]: [
-    PermissionCode.AUDIT_READ,
     PermissionCode.ORDERS_READ,
     PermissionCode.ORDERS_WRITE,
     PermissionCode.CASH_READ,
@@ -60,14 +58,12 @@ const rolePermissions: Record<RoleCode, PermissionCode[]> = {
   ],
   [RoleCode.COORDENADOR]: [
     PermissionCode.REPORTS_READ,
-    PermissionCode.AUDIT_READ,
     PermissionCode.ORDERS_READ,
     PermissionCode.ORDERS_WRITE,
     PermissionCode.CASH_READ,
   ],
   [RoleCode.DIRETORIA]: [
     PermissionCode.REPORTS_READ,
-    PermissionCode.AUDIT_READ,
     PermissionCode.CASH_READ,
     PermissionCode.APPROVE_CLOSURE,
   ],
@@ -138,7 +134,8 @@ async function main() {
   const templates = [
     { categoria: 'FERRAMENTAS', pergunta: 'Chave de fenda', tipoResposta: TipoRespostaChecklist.OK },
     { categoria: 'FERRAMENTAS', pergunta: 'Chave Phillips', tipoResposta: TipoRespostaChecklist.OK },
-    { categoria: 'FERRAMENTAS', pergunta: 'Cortador', tipoResposta: TipoRespostaChecklist.OK },
+    { categoria: 'FERRAMENTAS', pergunta: 'Clivador', tipoResposta: TipoRespostaChecklist.OK },
+    { categoria: 'FERRAMENTAS', pergunta: 'Rotuladora', tipoResposta: TipoRespostaChecklist.OK },
     { categoria: 'FERRAMENTAS', pergunta: 'Alicate de corte', tipoResposta: TipoRespostaChecklist.OK },
     { categoria: 'FERRAMENTAS', pergunta: 'Bolsa de ferramentas', tipoResposta: TipoRespostaChecklist.OK },
     { categoria: 'FERRAMENTAS', pergunta: 'Alicate decapador de fibra', tipoResposta: TipoRespostaChecklist.OK },

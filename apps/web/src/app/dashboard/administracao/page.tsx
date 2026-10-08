@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
+import Image from 'next/image';
 import { apiFetch } from '../../lib/api';
 import { useAuth } from '../../providers/auth-provider';
 import { PlatformTheme, usePlatformTheme } from '../../providers/platform-theme-provider';
@@ -17,7 +18,7 @@ type ManagedUser = {
   ultimoLogin: string | null;
 };
 type UserForm = { nome: string; email: string; role: UserRole | ''; status: UserStatus; password: string };
-type ThemeColorKey = 'brandPrimary' | 'brandAccent' | 'pageBackground' | 'surfaceBackground';
+type ThemeColorKey = 'brandPrimary' | 'brandAccent' | 'pageBackground' | 'surfaceBackground' | 'textPrimary' | 'textSecondary';
 
 const newUserForm: UserForm = { nome: '', email: '', role: 'TECNICO', status: 'ATIVO', password: '' };
 const roles: { value: UserRole; label: string }[] = [
@@ -30,6 +31,8 @@ const themeColors: { key: ThemeColorKey; label: string }[] = [
   { key: 'brandAccent', label: 'Cor de destaque' },
   { key: 'pageBackground', label: 'Fundo da plataforma' },
   { key: 'surfaceBackground', label: 'Fundo de painéis' },
+  { key: 'textPrimary', label: 'Fonte principal' },
+  { key: 'textSecondary', label: 'Fonte secundária' },
 ];
 
 function roleLabel(role: string) {
@@ -53,22 +56,73 @@ function ThemeEditor() {
       setError('Informe todas as cores no formato hexadecimal #RRGGBB.');
       return;
     }
+    if (draft.providerName.trim().length < 2 || draft.providerName.trim().length > 120) {
+      setError('O nome do provedor deve ter entre 2 e 120 caracteres.');
+      return;
+    }
     setSaving(true);
     try {
       await saveTheme(draft);
       setSaved(true);
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Não foi possível salvar as cores.');
+      setError(saveError instanceof Error ? saveError.message : 'Não foi possível salvar a personalização.');
     } finally {
       setSaving(false);
     }
   }
 
+  function handleLogoChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = '';
+    if (!file) return;
+    if (file.type !== 'image/png' || file.size > 1_000_000) {
+      setError('Selecione uma imagem PNG de até 1 MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== 'string' || !reader.result.startsWith('data:image/png;base64,')) {
+        setError('Não foi possível ler a imagem PNG.');
+        return;
+      }
+      setDraft((current) => ({ ...current, logoDataUrl: reader.result as string }));
+      setError(null);
+      setSaved(false);
+    };
+    reader.onerror = () => setError('Não foi possível ler a imagem PNG.');
+    reader.readAsDataURL(file);
+  }
+
   return (
     <form onSubmit={submitTheme} className="card space-y-5 p-5">
       <div>
-        <h2 className="text-lg font-semibold text-slate-900">Identidade visual</h2>
-        <p className="mt-1 text-sm text-slate-600">As cores são compartilhadas por toda a plataforma e salvas para todos os usuários.</p>
+        <h2 className="text-lg font-semibold text-slate-900">Identidade da plataforma</h2>
+        <p className="mt-1 text-sm text-slate-600">As alterações são aplicadas para todos os usuários.</p>
+      </div>
+      <label htmlFor="providerName" className="block text-sm font-medium text-slate-700">
+        Nome do provedor
+        <input
+          id="providerName"
+          required
+          minLength={2}
+          maxLength={120}
+          value={draft.providerName}
+          onChange={(event) => setDraft((current) => ({ ...current, providerName: event.target.value }))}
+          className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal"
+        />
+      </label>
+      <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_180px] sm:items-end">
+        <label htmlFor="providerLogo" className="block text-sm font-medium text-slate-700">
+          Logo do provedor (PNG, até 1 MB)
+          <input id="providerLogo" type="file" accept="image/png" onChange={handleLogoChange} className="mt-1 block w-full text-sm font-normal text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:font-medium" />
+        </label>
+        <div className="flex min-h-24 items-center justify-center rounded-lg border border-slate-200 bg-white p-3">
+          {draft.logoDataUrl
+            ? <Image src={draft.logoDataUrl} alt={`Logo ${draft.providerName}`} width={160} height={88} unoptimized className="max-h-20 w-auto object-contain" />
+            : <span className="text-sm font-semibold text-slate-700">{draft.providerName || 'Prévia do provedor'}</span>}
+        </div>
+        {draft.logoDataUrl && <button type="button" onClick={() => { setDraft((current) => ({ ...current, logoDataUrl: null })); setSaved(false); }} className="text-left text-sm font-medium text-rose-700 sm:col-span-2">Remover logo</button>}
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         {themeColors.map(({ key, label }) => {
@@ -102,9 +156,9 @@ function ThemeEditor() {
         })}
       </div>
       {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
-      {saved && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">Cores atualizadas para toda a plataforma.</p>}
+      {saved && <p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">Personalização atualizada para toda a plataforma.</p>}
       <button type="submit" disabled={saving} className="rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
-        {saving ? 'Salvando...' : 'Salvar cores'}
+        {saving ? 'Salvando...' : 'Salvar personalização'}
       </button>
     </form>
   );
@@ -120,6 +174,7 @@ export default function AdministrationPage() {
   const [form, setForm] = useState<UserForm>(newUserForm);
   const [showForm, setShowForm] = useState(false);
   const [savingUser, setSavingUser] = useState(false);
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -191,6 +246,22 @@ export default function AdministrationPage() {
     }
   }
 
+  async function removeUser(managedUser: ManagedUser) {
+    if (!window.confirm(`Excluir ${managedUser.nome}? Os checklists e pendências desta conta também serão excluídos.`)) return;
+    setError(null);
+    setMessage(null);
+    setDeletingUserId(managedUser.id);
+    try {
+      await apiFetch(`/api/admin/users/${managedUser.id}`, { method: 'DELETE' });
+      setUsers((current) => current.filter((item) => item.id !== managedUser.id));
+      setMessage(`Usuário ${managedUser.nome} excluído.`);
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Não foi possível excluir o usuário.');
+    } finally {
+      setDeletingUserId(null);
+    }
+  }
+
   if (!isMasterAdmin) {
     return <main className="card p-6"><h1 className="text-xl font-bold text-slate-900">Acesso restrito</h1><p className="mt-2 text-sm text-slate-600">A Administração está disponível somente para MASTER ADMIN.</p></main>;
   }
@@ -203,7 +274,7 @@ export default function AdministrationPage() {
       </header>
       <div role="tablist" aria-label="Seções de administração" className="flex flex-wrap gap-2 border-b border-slate-200 px-1">
         <button type="button" role="tab" aria-selected={tab === 'users'} onClick={() => setTab('users')} className={`border-b-2 px-4 py-3 text-sm font-semibold ${tab === 'users' ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-500'}`}>Usuários</button>
-        <button type="button" role="tab" aria-selected={tab === 'theme'} onClick={() => setTab('theme')} className={`border-b-2 px-4 py-3 text-sm font-semibold ${tab === 'theme' ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-500'}`}>Cores da plataforma</button>
+        <button type="button" role="tab" aria-selected={tab === 'theme'} onClick={() => setTab('theme')} className={`border-b-2 px-4 py-3 text-sm font-semibold ${tab === 'theme' ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-500'}`}>Customizar</button>
       </div>
 
       {tab === 'theme' ? <ThemeEditor /> : <>
@@ -218,7 +289,7 @@ export default function AdministrationPage() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[680px] text-left text-sm">
                 <thead><tr className="border-b border-slate-200 text-xs uppercase text-slate-500"><th className="px-3 py-3">Nome</th><th className="px-3 py-3">E-mail</th><th className="px-3 py-3">Tipo</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Último acesso</th><th className="px-3 py-3"><span className="sr-only">Ações</span></th></tr></thead>
-                <tbody>{users.map((managedUser) => <tr key={managedUser.id} className="border-b border-slate-100 last:border-0"><td className="px-3 py-3 font-medium text-slate-800">{managedUser.nome}</td><td className="px-3 py-3 text-slate-600">{managedUser.email}</td><td className="px-3 py-3 text-slate-600">{roleLabel(managedUser.role)}</td><td className="px-3 py-3 text-slate-600">{managedUser.status}</td><td className="px-3 py-3 text-slate-600">{managedUser.ultimoLogin ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(managedUser.ultimoLogin)) : 'Nunca'}</td><td className="px-3 py-3 text-right"><button type="button" onClick={() => beginEdit(managedUser)} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium">Editar</button></td></tr>)}</tbody>
+                <tbody>{users.map((managedUser) => <tr key={managedUser.id} className="border-b border-slate-100 last:border-0"><td className="px-3 py-3 font-medium text-slate-800">{managedUser.nome}</td><td className="px-3 py-3 text-slate-600">{managedUser.email}</td><td className="px-3 py-3 text-slate-600">{roleLabel(managedUser.role)}</td><td className="px-3 py-3 text-slate-600">{managedUser.status}</td><td className="px-3 py-3 text-slate-600">{managedUser.ultimoLogin ? new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(managedUser.ultimoLogin)) : 'Nunca'}</td><td className="px-3 py-3 text-right"><div className="flex justify-end gap-2"><button type="button" onClick={() => beginEdit(managedUser)} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium">Editar</button><button type="button" disabled={deletingUserId === managedUser.id} onClick={() => void removeUser(managedUser)} className="rounded-md border border-rose-300 px-3 py-1.5 text-sm font-medium text-rose-700 disabled:opacity-50">{deletingUserId === managedUser.id ? 'Excluindo...' : 'Excluir'}</button></div></td></tr>)}</tbody>
               </table>
               {!users.length && <p className="py-6 text-center text-sm text-slate-500">Nenhum usuário cadastrado.</p>}
             </div>

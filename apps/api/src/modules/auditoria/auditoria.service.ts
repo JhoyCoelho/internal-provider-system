@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, RoleCode } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
 
 export type AuditLogInput = {
@@ -10,12 +10,14 @@ export type AuditLogInput = {
   valorNovo?: Prisma.InputJsonValue | null;
   ipAddress?: string | null;
   userAgent?: string | null;
+  autorMasterAdmin?: boolean;
 };
 
 export async function createAuditLog(input: AuditLogInput) {
   return prisma.logAuditoria.create({
     data: {
       usuarioId: input.usuarioId ?? null,
+      autorMasterAdmin: input.autorMasterAdmin ?? false,
       acao: input.acao,
       entidade: input.entidade,
       entidadeId: input.entidadeId ?? null,
@@ -36,17 +38,16 @@ export async function createAuditLog(input: AuditLogInput) {
 export async function listAuditLogs(filters?: {
   entidade?: string;
   usuarioId?: string;
-  colaborador?: string;
   acao?: string;
   from?: Date;
   to?: Date;
 }) {
   return prisma.logAuditoria.findMany({
     where: {
-      ...(filters?.entidade ? { entidade: { contains: filters.entidade, mode: 'insensitive' } } : {}),
+      autorMasterAdmin: false,
+      ...(filters?.entidade ? { entidade: filters.entidade } : {}),
       ...(filters?.usuarioId ? { usuarioId: filters.usuarioId } : {}),
-      ...(filters?.colaborador ? { usuario: { is: { nome: { contains: filters.colaborador, mode: 'insensitive' } } } } : {}),
-      ...(filters?.acao ? { acao: { contains: filters.acao, mode: 'insensitive' } } : {}),
+      ...(filters?.acao ? { acao: filters.acao } : {}),
       ...(filters?.from || filters?.to ? { createdAt: { ...(filters.from ? { gte: filters.from } : {}), ...(filters.to ? { lte: filters.to } : {}) } } : {}),
     },
     orderBy: [{ createdAt: 'desc' }],
@@ -62,9 +63,23 @@ export async function listAuditLogs(filters?: {
   });
 }
 
+export async function getAuditFilterOptions() {
+  const auditWhere = { autorMasterAdmin: false };
+  const [modules, actions, collaborators] = await Promise.all([
+    prisma.logAuditoria.findMany({ where: auditWhere, distinct: ['entidade'], select: { entidade: true }, orderBy: { entidade: 'asc' } }),
+    prisma.logAuditoria.findMany({ where: auditWhere, distinct: ['acao'], select: { acao: true }, orderBy: { acao: 'asc' } }),
+    prisma.usuario.findMany({
+      where: { roles: { none: { perfil: { is: { code: RoleCode.MASTER_ADMIN } } } } },
+      select: { id: true, nome: true },
+      orderBy: [{ nome: 'asc' }, { email: 'asc' }],
+    }),
+  ]);
+  return { modules: modules.map(({ entidade }) => entidade), actions: actions.map(({ acao }) => acao), collaborators };
+}
+
 export async function getAuditLogById(id: string) {
-  return prisma.logAuditoria.findUnique({
-    where: { id },
+  return prisma.logAuditoria.findFirst({
+    where: { id, autorMasterAdmin: false },
     include: {
       usuario: {
         select: {

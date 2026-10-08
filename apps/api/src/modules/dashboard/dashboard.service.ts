@@ -19,6 +19,7 @@ export async function getDashboardSummary(period: DashboardPeriod, checklistUsua
   const [pendingChecklists, filledChecklists, lateFilledChecklists, unresolvedResponses, completedRemovals, openRemovals, failedRemovals] = await Promise.all([
     prisma.checklist.count({
       where: {
+        excluidoEm: null,
         ...dateFilter(period, 'dataAgenda'),
         ...(checklistUsuarioId ? { usuarioId: checklistUsuarioId } : {}),
         OR: [
@@ -28,11 +29,11 @@ export async function getDashboardSummary(period: DashboardPeriod, checklistUsua
         ],
       },
     }),
-    prisma.checklist.count({ where: { ...checklistDateWhere, ...(checklistUsuarioId ? { usuarioId: checklistUsuarioId } : {}), status: { in: completedStatuses } } }),
-    prisma.checklist.count({ where: { ...checklistDateWhere, ...(checklistUsuarioId ? { usuarioId: checklistUsuarioId } : {}), status: { in: completedStatuses }, justificativaAtraso: { not: null } } }),
+    prisma.checklist.count({ where: { excluidoEm: null, ...checklistDateWhere, ...(checklistUsuarioId ? { usuarioId: checklistUsuarioId } : {}), status: { in: completedStatuses } } }),
+    prisma.checklist.count({ where: { excluidoEm: null, ...checklistDateWhere, ...(checklistUsuarioId ? { usuarioId: checklistUsuarioId } : {}), status: { in: completedStatuses }, justificativaAtraso: { not: null } } }),
     prisma.checklistResposta.findMany({
-      where: { respostaTipo: TipoRespostaChecklist.NAO_CONFORME, resolvidoEm: null, checklist: { ...checklistDateWhere, ...(checklistUsuarioId ? { usuarioId: checklistUsuarioId } : {}) } },
-      include: { template: { select: { pergunta: true } }, checklist: { select: { id: true, categoria: true, dataPreenchimento: true, justificativaAtraso: true, usuario: { select: { nome: true } } } } },
+      where: { respostaTipo: TipoRespostaChecklist.NAO_CONFORME, resolvidoEm: null, checklist: { excluidoEm: null, ...checklistDateWhere, ...(checklistUsuarioId ? { usuarioId: checklistUsuarioId } : {}) } },
+      include: { template: { select: { pergunta: true } }, checklist: { select: { id: true, categoria: true, dataPreenchimento: true, justificativaAtraso: true, usuarioNome: true, usuario: { select: { nome: true } } } } },
       orderBy: { registradoEm: 'desc' },
     }),
     prisma.ordemRemocao.count({ where: { ...removalDateWhere, status: StatusOrdemRemocao.CONCLUIDO } }),

@@ -4,10 +4,14 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { apiFetch } from '../lib/api';
 
 export type PlatformTheme = {
+  providerName: string;
+  logoDataUrl: string | null;
   brandPrimary: string;
   brandAccent: string;
   pageBackground: string;
   surfaceBackground: string;
+  textPrimary: string;
+  textSecondary: string;
   updatedAt?: string;
 };
 
@@ -17,10 +21,14 @@ type PlatformThemeContextValue = {
 };
 
 const defaultTheme: PlatformTheme = {
+  providerName: 'Fyberlink',
+  logoDataUrl: null,
   brandPrimary: '#1d4ed8',
   brandAccent: '#0f766e',
   pageBackground: '#f8fafc',
   surfaceBackground: '#ffffff',
+  textPrimary: '#0f172a',
+  textSecondary: '#475569',
 };
 
 const PlatformThemeContext = createContext<PlatformThemeContextValue | undefined>(undefined);
@@ -31,6 +39,9 @@ function applyTheme(theme: PlatformTheme) {
   root.style.setProperty('--app-brand-accent', theme.brandAccent);
   root.style.setProperty('--app-page-background', theme.pageBackground);
   root.style.setProperty('--app-surface-background', theme.surfaceBackground);
+  root.style.setProperty('--app-text-primary', theme.textPrimary);
+  root.style.setProperty('--app-text-secondary', theme.textSecondary);
+  root.style.setProperty('--foreground', theme.textPrimary);
 }
 
 export function PlatformThemeProvider({ children }: { children: React.ReactNode }) {
@@ -52,10 +63,14 @@ export function PlatformThemeProvider({ children }: { children: React.ReactNode 
     const savedTheme = await apiFetch<PlatformTheme>('/api/platform-theme', {
       method: 'PUT',
       body: JSON.stringify({
+        providerName: nextTheme.providerName,
+        logoDataUrl: nextTheme.logoDataUrl,
         brandPrimary: nextTheme.brandPrimary,
         brandAccent: nextTheme.brandAccent,
         pageBackground: nextTheme.pageBackground,
         surfaceBackground: nextTheme.surfaceBackground,
+        textPrimary: nextTheme.textPrimary,
+        textSecondary: nextTheme.textSecondary,
       }),
     });
     setTheme(savedTheme);

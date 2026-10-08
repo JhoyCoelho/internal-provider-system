@@ -1,6 +1,7 @@
 import { Router } from 'express';
-import { requirePermissions } from '../../middleware/rbacMiddleware.js';
+import { requireRole } from '../../middleware/rbacMiddleware.js';
 import {
+  getAuditFilterOptionsController,
   getAuditLogController,
   listAuditLogsController,
 } from './auditoria.controller.js';
@@ -8,14 +9,20 @@ import {
 const router = Router();
 
 router.get(
+  '/filtros',
+  requireRole('MASTER_ADMIN'),
+  getAuditFilterOptionsController,
+);
+
+router.get(
   '/',
-  requirePermissions('AUDIT_READ'),
+  requireRole('MASTER_ADMIN'),
   listAuditLogsController,
 );
 
 router.get(
   '/:id',
-  requirePermissions('AUDIT_READ'),
+  requireRole('MASTER_ADMIN'),
   getAuditLogController,
 );
 

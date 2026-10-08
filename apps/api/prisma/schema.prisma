@@ -95,10 +95,14 @@ enum StatusUsuario {
 
 model ConfiguracaoPlataforma {
   id                Int      @id @default(1)
+  providerName       String   @default("Fyberlink") @map("provider_name") @db.VarChar(120)
+  logoDataUrl       String?  @map("logo_data_url") @db.Text
   brandPrimary      String   @default("#1d4ed8") @map("brand_primary") @db.VarChar(7)
   brandAccent       String   @default("#0f766e") @map("brand_accent") @db.VarChar(7)
   pageBackground    String   @default("#f8fafc") @map("page_background") @db.VarChar(7)
   surfaceBackground String   @default("#ffffff") @map("surface_background") @db.VarChar(7)
+  textPrimary       String   @default("#0f172a") @map("text_primary") @db.VarChar(7)
+  textSecondary     String   @default("#475569") @map("text_secondary") @db.VarChar(7)
   updatedAt         DateTime @updatedAt @map("updated_at")
 
   @@map("configuracao_plataforma")
@@ -126,6 +130,8 @@ model Usuario {
   respostasResolvidas ChecklistResposta[] @relation("ChecklistRespostaResolucao")
   auditorias     LogAuditoria[] @relation("LogAuditoriaUsuario")
   movimentosCaixa MovimentacaoCaixa[]
+  termosCriados  TermoResponsabilidade[] @relation("TermoCriador")
+  termosDesignados TermoResponsabilidade[] @relation("TermoDesignado")
 
   @@map("usuarios")
 }
@@ -207,7 +213,7 @@ model OrdemRemocao {
 
 model RotaRemocao {
   id          String            @id @default(uuid()) @db.Uuid
-  criadoPorId String            @map("criado_por_id") @db.Uuid
+  criadoPorId String?           @map("criado_por_id") @db.Uuid
   origem      String            @db.VarChar(64)
   status      StatusRotaRemocao @default(EM_ANDAMENTO)
   distanciaKm Float             @map("distancia_km")
@@ -216,7 +222,7 @@ model RotaRemocao {
   cancelledAt DateTime?         @map("cancelled_at")
   cancelledById String?         @map("cancelled_by_id") @db.Uuid
 
-  criadoPor Usuario               @relation("RotaRemocaoCriador", fields: [criadoPorId], references: [id])
+  criadoPor Usuario?              @relation("RotaRemocaoCriador", fields: [criadoPorId], references: [id], onDelete: SetNull)
   canceladaPor Usuario?           @relation("RotaRemocaoCanceladaPor", fields: [cancelledById], references: [id])
   paradas   RotaRemocaoParada[]
 
@@ -246,12 +252,12 @@ model RotaRemocaoParada {
 model ObservacaoRemocao {
   id        String      @id @default(uuid()) @db.Uuid
   ordemId   String      @map("ordem_id") @db.Uuid
-  usuarioId String      @map("usuario_id") @db.Uuid
+  usuarioId String?     @map("usuario_id") @db.Uuid
   texto     String      @db.Text
   createdAt DateTime    @default(now()) @map("created_at")
 
   ordem   OrdemRemocao @relation(fields: [ordemId], references: [id], onDelete: Cascade)
-  usuario Usuario      @relation(fields: [usuarioId], references: [id])
+  usuario Usuario?     @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
 
   @@index([ordemId, createdAt])
   @@map("observacoes_remocao")
@@ -273,7 +279,8 @@ model ChecklistTemplate {
 
 model Checklist {
   id                String           @id @default(uuid()) @db.Uuid
-  usuarioId         String           @map("usuario_id") @db.Uuid
+  usuarioId         String?          @map("usuario_id") @db.Uuid
+  usuarioNome       String?          @map("usuario_nome") @db.VarChar(160)
   categoria         String           @default("GERAL") @db.VarChar(40)
   janela            JanelaChecklist?
   dataAgenda        DateTime?        @map("data_agenda") @db.Date
@@ -282,11 +289,12 @@ model Checklist {
   status            StatusChecklist  @default(PENDENTE)
   justificativaAtraso String?         @map("justificativa_atraso") @db.Text
   assinaturaData    String?           @map("assinatura_data") @db.Text
+  excluidoEm       DateTime?          @map("excluido_em")
   aprovadoPorId     String?          @map("aprovado_por_id") @db.Uuid
   createdAt         DateTime         @default(now()) @map("created_at")
   updatedAt         DateTime         @updatedAt @map("updated_at")
 
-  usuario         Usuario             @relation(fields: [usuarioId], references: [id])
+  usuario         Usuario?            @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
   respostas       ChecklistResposta[]
 
   @@map("checklists")
@@ -314,7 +322,7 @@ model ChecklistResposta {
 
 model MovimentacaoCaixa {
   id                 String               @id @default(uuid()) @db.Uuid
-  operadorId         String               @map("operador_id") @db.Uuid
+  operadorId         String?              @map("operador_id") @db.Uuid
   turnoAbertoEm      DateTime             @map("turno_aberto_em")
   turnoFechadoEm     DateTime?            @map("turno_fechado_em")
   valorEsperado      Decimal              @map("valor_esperado") @db.Decimal(12,2)
@@ -326,7 +334,7 @@ model MovimentacaoCaixa {
   createdAt          DateTime             @default(now()) @map("created_at")
   updatedAt          DateTime             @updatedAt @map("updated_at")
 
-  operador Usuario @relation(fields: [operadorId], references: [id])
+  operador Usuario? @relation(fields: [operadorId], references: [id], onDelete: SetNull)
 
   @@map("movimentacoes_caixa")
 }
@@ -334,6 +342,7 @@ model MovimentacaoCaixa {
 model LogAuditoria {
   id          String   @id @default(uuid()) @db.Uuid
   usuarioId   String?  @map("usuario_id") @db.Uuid
+  autorMasterAdmin Boolean @default(false) @map("autor_master_admin")
   acao        String   @db.VarChar(255)
   entidade    String   @db.VarChar(120)
   entidadeId  String?  @map("entidade_id") @db.VarChar(80)
@@ -346,4 +355,24 @@ model LogAuditoria {
   usuario Usuario? @relation("LogAuditoriaUsuario", fields: [usuarioId], references: [id])
 
   @@map("logs_auditoria")
+}
+
+model TermoResponsabilidade {
+  id                  String    @id @default(uuid()) @db.Uuid
+  descricao           String    @db.Text
+  criadoPorId         String?   @map("criado_por_id") @db.Uuid
+  criadoPorNome       String    @map("criado_por_nome") @db.VarChar(160)
+  usuarioDesignadoId  String?   @map("usuario_designado_id") @db.Uuid
+  usuarioDesignadoNome String   @map("usuario_designado_nome") @db.VarChar(160)
+  usuarioDesignadoEmail String  @map("usuario_designado_email") @db.VarChar(160)
+  assinaturaData      String?   @map("assinatura_data") @db.Text
+  assinadoEm          DateTime? @map("assinado_em")
+  createdAt           DateTime  @default(now()) @map("created_at")
+
+  criadoPor        Usuario? @relation("TermoCriador", fields: [criadoPorId], references: [id], onDelete: SetNull)
+  usuarioDesignado Usuario? @relation("TermoDesignado", fields: [usuarioDesignadoId], references: [id], onDelete: SetNull)
+
+  @@index([usuarioDesignadoId, assinadoEm])
+  @@index([createdAt])
+  @@map("termos_responsabilidade")
 }
