@@ -374,6 +374,7 @@ model LogAuditoria {
   ipAddress   String?  @map("ip_address") @db.VarChar(45)
   userAgent   String?  @map("user_agent") @db.VarChar(255)
   createdAt   DateTime @default(now()) @map("created_at")
+  visivelAuditoria Boolean @default(false) @map("visivel_auditoria")
 
   usuario Usuario? @relation("LogAuditoriaUsuario", fields: [usuarioId], references: [id])
 

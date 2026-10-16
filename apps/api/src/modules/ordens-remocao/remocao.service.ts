@@ -198,6 +198,7 @@ export async function updateOrderStatus(orderId: string, payload: UpdateOrderSta
     await createAuditLogInTransaction(transaction, {
       usuarioId: actorId,
       autorMasterAdmin: actorIsMasterAdmin,
+      visivelAuditoria: true,
       acao: isConclusion ? 'REMOCAO_CONCLUIDA' : 'FALHA_TENTATIVA_REMOCAO',
       entidade: 'REMOCAO',
       entidadeId: orderId,

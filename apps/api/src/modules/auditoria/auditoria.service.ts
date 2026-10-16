@@ -11,6 +11,7 @@ export type AuditLogInput = {
   ipAddress?: string | null;
   userAgent?: string | null;
   autorMasterAdmin?: boolean;
+  visivelAuditoria?: boolean;
 };
 
 function auditLogData(input: AuditLogInput): Prisma.LogAuditoriaCreateInput {
@@ -24,6 +25,7 @@ function auditLogData(input: AuditLogInput): Prisma.LogAuditoriaCreateInput {
     valorNovo: input.valorNovo === undefined || input.valorNovo === null ? Prisma.JsonNull : input.valorNovo,
     ipAddress: input.ipAddress ?? null,
     userAgent: input.userAgent ?? null,
+  visivelAuditoria: input.visivelAuditoria ?? false,
   };
 }
 
@@ -44,7 +46,7 @@ export async function listAuditLogs(filters?: {
 }) {
   return prisma.logAuditoria.findMany({
     where: {
-      autorMasterAdmin: false,
+      OR: [{ autorMasterAdmin: false }, { visivelAuditoria: true }],
       ...(filters?.entidade ? { entidade: filters.entidade } : {}),
       ...(filters?.usuarioId ? { usuarioId: filters.usuarioId } : {}),
       ...(filters?.acao ? { acao: filters.acao } : {}),
@@ -64,7 +66,7 @@ export async function listAuditLogs(filters?: {
 }
 
 export async function getAuditFilterOptions() {
-  const auditWhere = { autorMasterAdmin: false };
+  const auditWhere = { OR: [{ autorMasterAdmin: false }, { visivelAuditoria: true }] };
   const [modules, actions, collaborators] = await Promise.all([
     prisma.logAuditoria.findMany({ where: auditWhere, distinct: ['entidade'], select: { entidade: true }, orderBy: { entidade: 'asc' } }),
     prisma.logAuditoria.findMany({ where: auditWhere, distinct: ['acao'], select: { acao: true }, orderBy: { acao: 'asc' } }),
@@ -79,7 +81,7 @@ export async function getAuditFilterOptions() {
 
 export async function getAuditLogById(id: string) {
   return prisma.logAuditoria.findFirst({
-    where: { id, autorMasterAdmin: false },
+    where: { id, OR: [{ autorMasterAdmin: false }, { visivelAuditoria: true }] },
     include: {
       usuario: {
         select: {
