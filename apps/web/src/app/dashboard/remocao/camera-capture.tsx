@@ -8,14 +8,52 @@ type CameraCaptureProps = {
 };
 
 const maxImageBytes = 700 * 1024;
+type CameraPermissionState = PermissionState | 'unknown';
+
+function cameraErrorName(error: unknown) {
+  return error instanceof Error ? error.name : '';
+}
+
+function cameraPermissionInstructions() {
+  const userAgent = navigator.userAgent;
+  const isIOS = /iPhone|iPad|iPod/.test(userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isAndroid = /Android/.test(userAgent);
+  const browser = /Edg\//.test(userAgent) ? 'Edge' : /Firefox\//.test(userAgent) ? 'Firefox' : /Chrome\//.test(userAgent) ? 'Chrome' : 'navegador';
+
+  if (isIOS) {
+    const iosBrowser = /CriOS/.test(userAgent) ? 'Chrome' : /FxiOS/.test(userAgent) ? 'Firefox' : /EdgiOS/.test(userAgent) ? 'Edge' : 'Safari';
+    return `No iPhone ou iPad, abra Ajustes > Privacidade e Segurança > Câmera e habilite ${iosBrowser}. No Safari, confira também aA > Ajustes do Site > Câmera > Permitir.`;
+  }
+  if (isAndroid) {
+    return `No ${browser}, toque no ícone à esquerda do endereço do site e permita Câmera. Se continuar bloqueado, abra Configurações do Android > Apps > ${browser} > Permissões > Câmera e habilite o acesso.`;
+  }
+  return `No ${browser}, abra as permissões do site pelo ícone à esquerda do endereço, altere Câmera para Permitir e volte a esta tela.`;
+}
+
+function cameraErrorMessage(error: unknown) {
+  switch (cameraErrorName(error)) {
+    case 'NotFoundError':
+    case 'DevicesNotFoundError':
+      return 'Não encontramos uma câmera disponível neste dispositivo.';
+    case 'NotReadableError':
+    case 'AbortError':
+      return 'A câmera está sendo usada por outro aplicativo ou não respondeu. Feche outros apps que usam a câmera e tente novamente.';
+    case 'OverconstrainedError':
+      return 'Não foi possível iniciar a câmera com as configurações deste dispositivo. Tente novamente.';
+    default:
+      return 'Não foi possível iniciar a câmera. Verifique se ela está conectada e tente novamente.';
+  }
+}
 
 export function CameraCapture({ onCapture, onCancel }: CameraCaptureProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const mountedRef = useRef(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [starting, setStarting] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [permissionState, setPermissionState] = useState<CameraPermissionState>('unknown');
 
   function stopStream() {
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -26,31 +64,83 @@ export function CameraCapture({ onCapture, onCancel }: CameraCaptureProps) {
   useEffect(() => {
     if (videoRef.current && stream) {
       videoRef.current.srcObject = stream;
-      void videoRef.current.play().catch(() => setError('Não foi possível iniciar a prévia da câmera.'));
+      void videoRef.current.play().catch(() => {
+        if (mountedRef.current) setError('Não foi possível exibir a prévia. Feche outros apps que usam a câmera e tente novamente.');
+      });
     }
   }, [stream]);
 
-  useEffect(() => () => {
-    streamRef.current?.getTracks().forEach((track) => track.stop());
+  useEffect(() => {
+    let active = true;
+    let permissionStatus: PermissionStatus | null = null;
+    mountedRef.current = true;
+    const updatePermission = (status: PermissionStatus) => {
+      setPermissionState(status.state);
+      if (status.state !== 'denied') setError(null);
+    };
+    const handlePermissionChange = () => {
+      if (active && permissionStatus) updatePermission(permissionStatus);
+    };
+
+    if (!window.isSecureContext) {
+      setError('A câmera só funciona em uma conexão segura. Abra o sistema pelo endereço HTTPS; em desenvolvimento, use localhost.');
+    } else if (navigator.permissions?.query) {
+      void navigator.permissions.query({ name: 'camera' as PermissionName }).then((status) => {
+        if (!active) return;
+        permissionStatus = status;
+        updatePermission(status);
+        status.addEventListener('change', handlePermissionChange);
+      }).catch(() => {});
+    }
+
+    return () => {
+      active = false;
+      mountedRef.current = false;
+      permissionStatus?.removeEventListener('change', handlePermissionChange);
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    };
   }, []);
 
   async function startCamera() {
     setStarting(true);
     setError(null);
     try {
-      if (!navigator.mediaDevices?.getUserMedia) throw new Error('A câmera exige uma conexão HTTPS e um navegador compatível.');
-      const cameraStream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 960 } },
-      });
+      if (!window.isSecureContext) {
+        setError('A câmera só funciona em uma conexão segura. Abra o sistema pelo endereço HTTPS; em desenvolvimento, use localhost.');
+        return;
+      }
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setError('Este navegador não oferece acesso à câmera. Abra o sistema em um navegador atualizado.');
+        return;
+      }
+
+      let cameraStream: MediaStream;
+      try {
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 960 } },
+        });
+      } catch (cameraError) {
+        if (cameraErrorName(cameraError) !== 'OverconstrainedError') throw cameraError;
+        cameraStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
+      }
+      if (!mountedRef.current) {
+        cameraStream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       streamRef.current = cameraStream;
+      setPermissionState('granted');
       setStream(cameraStream);
     } catch (cameraError) {
-      setError(cameraError instanceof Error && cameraError.name === 'NotAllowedError'
-        ? 'Acesso à câmera negado. Permita a câmera nas configurações do navegador e tente novamente.'
-        : cameraError instanceof Error ? cameraError.message : 'Não foi possível acessar a câmera.');
+      if (!mountedRef.current) return;
+      if (['NotAllowedError', 'PermissionDeniedError', 'SecurityError'].includes(cameraErrorName(cameraError)) && window.isSecureContext) {
+        setPermissionState('denied');
+      } else {
+        setError(cameraErrorMessage(cameraError));
+      }
     } finally {
-      setStarting(false);
+      if (mountedRef.current) setStarting(false);
     }
   }
 
@@ -99,10 +189,11 @@ export function CameraCapture({ onCapture, onCancel }: CameraCaptureProps) {
 
   return (
     <section className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3" aria-label="Captura de foto">
-      {stream ? <video ref={videoRef} autoPlay playsInline muted className="max-h-[55vh] w-full rounded-lg bg-slate-950 object-contain" /> : <p className="text-sm text-slate-600">A câmera usa somente a imagem capturada agora. O navegador pode solicitar permissão na primeira utilização.</p>}
+      {stream ? <video ref={videoRef} autoPlay playsInline muted className="max-h-[55vh] w-full rounded-lg bg-slate-950 object-contain" /> : <p className="text-sm text-slate-600">Toque em Ativar câmera. Na primeira vez, escolha Permitir no aviso do navegador.</p>}
+      {permissionState === 'denied' && <div role="status" className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"><p className="font-semibold">A câmera está bloqueada para este site</p><p>{cameraPermissionInstructions()}</p><p>Depois de alterar a permissão, volte aqui e toque em “Já permiti, tentar novamente”.</p></div>}
       {error && <p role="alert" className="text-sm text-rose-700">{error}</p>}
       <div className="flex flex-wrap gap-2">
-        {!stream && <button type="button" disabled={starting} onClick={() => void startCamera()} className="rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{starting ? 'Abrindo câmera...' : 'Ativar câmera'}</button>}
+        {!stream && <button type="button" disabled={starting} onClick={() => void startCamera()} className="rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{starting ? 'Abrindo câmera...' : permissionState === 'denied' ? 'Já permiti, tentar novamente' : 'Ativar câmera'}</button>}
         {stream && <button type="button" disabled={capturing} onClick={() => void capturePhoto()} className="rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{capturing ? 'Otimizando foto...' : 'Capturar foto'}</button>}
         <button type="button" onClick={() => { stopStream(); onCancel(); }} className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700">Cancelar</button>
       </div>
