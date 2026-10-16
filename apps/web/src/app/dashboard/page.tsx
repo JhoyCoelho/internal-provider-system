@@ -15,7 +15,18 @@ type ChecklistIssue = {
 
 type DashboardSummary = {
   checklists: { pending: number; filled: number; filledLate: number; issuesToResolve: ChecklistIssue[] };
-  removals: { completed: number; open: number; failed: number; routes: number | null };
+  removals: { completed: number; open: number; failed: number; routes: number };
+};
+type ChecklistDashboardRecord = {
+  id: string;
+  categoria: string;
+  status: 'PENDENTE' | 'PREENCHIDO' | 'EM_ATRASO' | 'PENDENTE_APROVACAO' | 'APROVADO' | 'REPROVADO';
+  dataPreenchimento: string | null;
+  dataPrevista: string | null;
+  requiresJustification: boolean;
+  usuario: { nome: string } | null;
+  usuarioNome: string | null;
+  respostas: { respostaTipo: 'OK' | 'NAO_CONFORME' | 'TEXTO' }[];
 };
 
 function csvCell(value: string | number) {
@@ -40,7 +51,9 @@ function dateRangeLabel(from: string, to: string) {
 export default function DashboardPage() {
   const { user } = useAuth();
   const isTechnician = Boolean(user?.roles.includes('TECNICO'));
+  const isMasterAdmin = Boolean(user?.roles.includes('MASTER_ADMIN'));
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [checklistRecords, setChecklistRecords] = useState<ChecklistDashboardRecord[]>([]);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [loading, setLoading] = useState(true);
@@ -54,7 +67,17 @@ export default function DashboardPage() {
       const params = new URLSearchParams();
       if (from) params.set('from', new Date(`${from}T00:00:00`).toISOString());
       if (to) params.set('to', new Date(`${to}T23:59:59.999`).toISOString());
-      setSummary(await apiFetch<DashboardSummary>(`/api/dashboard${params.size ? `?${params}` : ''}`));
+      const checklistParams = new URLSearchParams();
+      if (isMasterAdmin && from) checklistParams.set('from', from);
+      if (isMasterAdmin && to) checklistParams.set('to', to);
+      const [nextSummary, teamChecklists] = await Promise.all([
+        apiFetch<DashboardSummary>(`/api/dashboard${params.size ? `?${params}` : ''}`),
+        isMasterAdmin
+          ? apiFetch<ChecklistDashboardRecord[]>(`/api/checklists/relatorio${checklistParams.size ? `?${checklistParams}` : ''}`)
+          : Promise.resolve([]),
+      ]);
+      setSummary(nextSummary);
+      setChecklistRecords(teamChecklists);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Não foi possível carregar os indicadores.');
     } finally {
@@ -62,7 +85,7 @@ export default function DashboardPage() {
     }
   }
 
-  useEffect(() => { void loadSummary(); }, [from, to]);
+  useEffect(() => { if (user) void loadSummary(); }, [from, to, isMasterAdmin, user]);
 
   async function resolveIssue(issue: ChecklistIssue) {
     setResolvingId(issue.id);
@@ -84,7 +107,7 @@ export default function DashboardPage() {
       ['Remoções concluídas', summary.removals.completed],
       ['Remoções abertas/roteirizadas', summary.removals.open],
       ['Tentativas sem sucesso', summary.removals.failed],
-      ['Rotas criadas', 'Em breve'],
+      ['Rotas abertas', summary.removals.routes],
     ]);
   }
 
@@ -98,7 +121,13 @@ export default function DashboardPage() {
     { label: 'Remoções concluídas', value: summary.removals.completed, color: 'text-emerald-700', bg: 'bg-emerald-50' },
     { label: 'Remoções abertas', value: summary.removals.open, color: 'text-sky-700', bg: 'bg-sky-50' },
     { label: 'Tentativas sem sucesso', value: summary.removals.failed, color: 'text-rose-700', bg: 'bg-rose-50' },
+    { label: 'Rotas abertas', value: summary.removals.routes, color: 'text-violet-700', bg: 'bg-violet-50' },
   ] : [];
+  const masterPendingRecords = checklistRecords.filter((record) => ['PENDENTE', 'EM_ATRASO', 'PENDENTE_APROVACAO'].includes(record.status));
+  const masterLateRecords = masterPendingRecords.filter((record) => record.requiresJustification || ['EM_ATRASO', 'PENDENTE_APROVACAO'].includes(record.status));
+  const masterCorrectRecords = checklistRecords.filter((record) =>
+    ['PREENCHIDO', 'APROVADO'].includes(record.status)
+    && !record.respostas.some((answer) => answer.respostaTipo === 'NAO_CONFORME'));
 
   return (
     <main className="mx-auto max-w-7xl space-y-6 pb-8">
@@ -120,9 +149,19 @@ export default function DashboardPage() {
         <div className="mt-5"><h3 className="font-semibold text-slate-800">Itens a resolver</h3>{!summary || summary.checklists.issuesToResolve.length === 0 ? <p className="mt-2 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">Nenhum item pendente de resolução.</p> : <div className="mt-3 space-y-3">{summary.checklists.issuesToResolve.map((issue) => <article key={issue.id} className="flex flex-col gap-3 rounded-xl border border-rose-200 bg-rose-50/50 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold text-slate-900">{issue.template.pergunta}</p><p className="mt-1 text-sm text-slate-600">{issue.checklist.categoria} · {issue.checklist.usuario?.nome ?? issue.checklist.usuarioNome ?? 'Usuário removido'} · {issue.valorBooleano === false ? 'Faltando' : 'Danificado'}</p>{issue.valorTexto && <p className="mt-1 text-sm text-slate-700">{issue.valorTexto}</p>}</div></article>)}</div>}</div>
       </section>}
 
+      {isMasterAdmin && <section className="card p-5">
+        <div className="mb-5"><h2 className="text-xl font-bold text-slate-900">Checklists da equipe</h2><p className="mt-1 text-sm text-slate-500">Resumo do período selecionado.</p></div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <article className="rounded-xl border border-amber-200 bg-amber-50 p-4"><p className="text-sm text-amber-800">Pendentes</p><p className="mt-2 text-3xl font-bold text-amber-900">{masterPendingRecords.length - masterLateRecords.length}</p></article>
+          <article className="rounded-xl border border-rose-200 bg-rose-50 p-4"><p className="text-sm text-rose-800">Atrasados</p><p className="mt-2 text-3xl font-bold text-rose-900">{masterLateRecords.length}</p></article>
+          <article className="rounded-xl border border-emerald-200 bg-emerald-50 p-4"><p className="text-sm text-emerald-800">Preenchidos corretamente</p><p className="mt-2 text-3xl font-bold text-emerald-900">{masterCorrectRecords.length}</p></article>
+          <article className="rounded-xl border border-sky-200 bg-sky-50 p-4"><p className="text-sm text-sky-800">Não conformidades a resolver</p><p className="mt-2 text-3xl font-bold text-sky-900">{summary?.checklists.issuesToResolve.length ?? 0}</p></article>
+        </div>
+      </section>}
+
       <section className="card p-5">
         <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-xl font-bold text-slate-900">Remoções</h2><p className="mt-1 text-sm text-slate-500">Resumo da fila e das tentativas de remoção.</p></div>{!isTechnician && <button type="button" disabled={!summary} onClick={exportRemovalReport} className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 disabled:opacity-50">Exportar relatório</button>}</div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{removalMetrics.map((metric) => <article key={metric.label} className="rounded-xl border border-slate-200 p-4"><p className="text-sm text-slate-500">{metric.label}</p><p className={`mt-2 text-3xl font-bold ${metric.color}`}>{metric.value}</p></article>)}<article className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4"><p className="text-sm text-slate-500">Rotas de remoção</p><p className="mt-2 text-lg font-bold text-slate-400">EM BREVE</p></article></div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{removalMetrics.map((metric) => <article key={metric.label} className="rounded-xl border border-slate-200 p-4"><p className="text-sm text-slate-500">{metric.label}</p><p className={`mt-2 text-3xl font-bold ${metric.color}`}>{metric.value}</p></article>)}</div>
       </section>
     </main>
   );

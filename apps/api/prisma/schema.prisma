@@ -61,6 +61,11 @@ enum SubstatusFalha {
   ENDERECO_NAO_LOCALIZADO
 }
 
+enum TipoFotoRemocao {
+  FOTO_SERIAL
+  FOTO_FACHADA
+}
+
 enum TipoRespostaChecklist {
   OK
   NAO_CONFORME
@@ -132,6 +137,7 @@ model Usuario {
   movimentosCaixa MovimentacaoCaixa[]
   termosCriados  TermoResponsabilidade[] @relation("TermoCriador")
   termosDesignados TermoResponsabilidade[] @relation("TermoDesignado")
+  fotosRemocao   FotoRemocao[]
 
   @@map("usuarios")
 }
@@ -207,6 +213,7 @@ model OrdemRemocao {
   criadoPor Usuario? @relation("OrdemRemocaoCriador", fields: [criadoPorId], references: [id])
   observacoes ObservacaoRemocao[]
   paradasRota RotaRemocaoParada[]
+  fotos       FotoRemocao[]
 
   @@map("ordens_remocao")
 }
@@ -261,6 +268,22 @@ model ObservacaoRemocao {
 
   @@index([ordemId, createdAt])
   @@map("observacoes_remocao")
+}
+
+model FotoRemocao {
+  id             String          @id @default(uuid()) @db.Uuid
+  ordemId        String          @map("ordem_id") @db.Uuid
+  usuarioId      String?         @map("usuario_id") @db.Uuid
+  usuarioNome    String          @map("usuario_nome") @db.VarChar(160)
+  tipo           TipoFotoRemocao
+  imagemDataUrl  String          @map("imagem_data_url") @db.Text
+  createdAt      DateTime        @default(now()) @map("created_at")
+
+  ordem   OrdemRemocao @relation(fields: [ordemId], references: [id], onDelete: Cascade)
+  usuario Usuario?     @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+
+  @@index([ordemId, createdAt])
+  @@map("fotos_remocao")
 }
 
 model ChecklistTemplate {

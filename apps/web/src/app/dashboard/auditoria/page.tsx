@@ -16,7 +16,7 @@ type AuditLog = {
 type AuditFilters = { modules: string[]; actions: string[]; collaborators: { id: string; nome: string }[] };
 type Filters = { entidade: string; usuarioId: string; acao: string; from: string; to: string };
 const emptyFilters: Filters = { entidade: '', usuarioId: '', acao: '', from: '', to: '' };
-const moduleLabels: Record<string, string> = { REMOCAO: 'Remoções', CHECKLIST: 'Checklists', CAIXA: 'Caixa', USUARIO: 'Usuários', PERMISSAO: 'Permissões', CONFIGURACAO_PLATAFORMA: 'Configuração da plataforma' };
+const moduleLabels: Record<string, string> = { REMOCAO: 'Remoções', ROTA: 'Rotas de remoção', CHECKLIST: 'Checklists', CAIXA: 'Caixa', USUARIO: 'Usuários', PERMISSAO: 'Permissões', CONFIGURACAO_PLATAFORMA: 'Configuração da plataforma' };
 
 function downloadLogs(logs: AuditLog[]) {
   const rows = [

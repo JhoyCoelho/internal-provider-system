@@ -1,5 +1,6 @@
 import { JanelaChecklist, Prisma, RoleCode, StatusChecklist, StatusUsuario, TipoRespostaChecklist } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
+import { createAuditLogInTransaction } from '../auditoria/auditoria.service.js';
 
 export type ChecklistTemplateInput = {
   categoria?: string;
@@ -122,8 +123,9 @@ export async function createChecklist(usuarioId: string, answers: ChecklistAnswe
   }
   if (categoria && pending.categoria !== categoria.trim().toUpperCase()) throw new Error('O tipo selecionado não corresponde ao checklist pendente.');
 
-  await prisma.checklistResposta.deleteMany({ where: { checklistId } });
-  return prisma.checklist.update({
+  return prisma.$transaction(async (transaction) => {
+    await transaction.checklistResposta.deleteMany({ where: { checklistId } });
+    const checklist = await transaction.checklist.update({
       where: { id: checklistId },
       data: {
         status: StatusChecklist.PREENCHIDO,
@@ -133,6 +135,15 @@ export async function createChecklist(usuarioId: string, answers: ChecklistAnswe
       },
       include: { respostas: true },
     });
+    await createAuditLogInTransaction(transaction, {
+      usuarioId,
+      acao: 'CHECKLIST_PREENCHIDO',
+      entidade: 'CHECKLIST',
+      entidadeId: checklist.id,
+      valorNovo: { categoria: checklist.categoria, respostas: answers.length, status: checklist.status },
+    });
+    return checklist;
+  });
 }
 
 export async function listPendingChecklistsByUser(usuarioId: string) {
@@ -163,10 +174,20 @@ export async function justifyLateChecklist(usuarioId: string, checklistId: strin
   if (pending.status === StatusChecklist.PENDENTE && isWindowOpen(pending.janela, pending.dataAgenda)) throw new Error('Este checklist ainda está dentro do horário normal de preenchimento.');
   if (pending.status === StatusChecklist.PENDENTE && !isWindowPast(pending.janela, pending.dataAgenda)) throw new Error('O horário deste checklist ainda não começou.');
 
-  return prisma.checklist.update({
-    where: { id: checklistId },
-    data: { status: StatusChecklist.EM_ATRASO, justificativaAtraso: `${motivo}: ${descricao.trim()}`, assinaturaData },
-    select: { id: true, categoria: true, status: true, dataPrevista: true },
+  return prisma.$transaction(async (transaction) => {
+    const checklist = await transaction.checklist.update({
+      where: { id: checklistId },
+      data: { status: StatusChecklist.EM_ATRASO, justificativaAtraso: `${motivo}: ${descricao.trim()}`, assinaturaData },
+      select: { id: true, categoria: true, status: true, dataPrevista: true },
+    });
+    await createAuditLogInTransaction(transaction, {
+      usuarioId,
+      acao: 'JUSTIFICATIVA_CHECKLIST_PREENCHIDA',
+      entidade: 'CHECKLIST',
+      entidadeId: checklist.id,
+      valorNovo: { categoria: checklist.categoria, motivo, status: checklist.status },
+    });
+    return checklist;
   });
 }
 

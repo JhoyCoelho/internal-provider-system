@@ -12,7 +12,7 @@ export async function createRemovalRouteController(req: Request, res: Response) 
   if (!parsed.success) return res.status(400).json({ message: 'Dados da rota inválidos.', errors: parsed.error.flatten() });
   const userId = req.user?.id;
   if (!userId) return res.status(401).json({ message: 'Usuário não autenticado.' });
-  try { return res.status(201).json(await createRemovalRoute(userId, parsed.data.orderIds, parsed.data.origem)); }
+  try { return res.status(201).json(await createRemovalRoute(userId, parsed.data.orderIds, parsed.data.origem, req.user?.roles.includes('MASTER_ADMIN'))); }
   catch (error) { return res.status(400).json({ message: error instanceof Error ? error.message : 'Não foi possível criar a rota.' }); }
 }
 

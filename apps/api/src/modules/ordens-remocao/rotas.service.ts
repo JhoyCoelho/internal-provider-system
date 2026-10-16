@@ -1,5 +1,6 @@
 import { StatusOrdemRemocao, StatusRotaRemocao } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
+import { createAuditLogInTransaction } from '../auditoria/auditoria.service.js';
 
 type Coordinates = { latitude: number; longitude: number };
 type RouteOrder = { id: string; localizacao: string; clienteNome: string; endereco: string; numero: string; bairro: string; pontoReferencia: string; status: StatusOrdemRemocao; tecnicoId: string | null };
@@ -95,7 +96,7 @@ function routeInclude() {
   };
 }
 
-export async function createRemovalRoute(criadoPorId: string, orderIds: string[], originText: string) {
+export async function createRemovalRoute(criadoPorId: string, orderIds: string[], originText: string, autorMasterAdmin = false) {
   const origin = parseCoordinates(originText);
   const uniqueIds = [...new Set(orderIds)];
   if (uniqueIds.length !== orderIds.length) throw new Error('A lista contém ordens duplicadas.');
@@ -136,6 +137,15 @@ export async function createRemovalRoute(criadoPorId: string, orderIds: string[]
       data: { status: StatusOrdemRemocao.ROTEIRIZADO, tecnicoId: criadoPorId },
     });
     if (updated.count !== uniqueIds.length) throw new Error('A fila mudou durante a criação da rota. Nenhuma alteração foi aplicada; atualize e tente novamente.');
+
+    await createAuditLogInTransaction(transaction, {
+      usuarioId: criadoPorId,
+      autorMasterAdmin,
+      acao: 'ROTA_CRIADA',
+      entidade: 'ROTA',
+      entidadeId: route.id,
+      valorNovo: { paradas: ordered.length, distanciaKm: route.distanciaKm },
+    });
 
     return transaction.rotaRemocao.findUniqueOrThrow({ where: { id: route.id }, include: routeInclude() });
   });

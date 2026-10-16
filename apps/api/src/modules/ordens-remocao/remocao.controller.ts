@@ -8,12 +8,22 @@ const querySchema = z.object({
   bairro: z.string().optional(), pontoReferencia: z.string().optional(), regiao: z.string().optional(), tecnicoId: z.string().uuid().optional(),
 });
 
+const jpegDataUrlSchema = z.string().max(1_000_000).refine((value) => {
+  const match = /^data:image\/jpeg;base64,([A-Za-z0-9+/]+={0,2})$/.exec(value);
+  if (!match) return false;
+  const bytes = Buffer.from(match[1], 'base64');
+  return bytes.length <= 700 * 1024
+    && bytes.toString('base64') === match[1]
+    && bytes.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]));
+}, 'A foto deve ser uma captura JPEG válida de até 700 KB.');
+const optionalPhotoSchema = z.union([z.literal(''), jpegDataUrlSchema]).optional().nullable();
+
 const createOrderSchema = z.object({
   clienteNome: z.string().min(2, 'Cliente obrigatório.'), endereco: z.string().min(5, 'Endereço obrigatório.'),
   numero: z.string().min(1, 'Número obrigatório.'), bairro: z.string().min(2, 'Bairro obrigatório.'),
   pontoReferencia: z.string().min(2, 'Ponto de referência obrigatório.'), localizacao: z.string().min(2, 'Localização obrigatória.'),
   regiao: z.string().min(2, 'Região inválida.').optional(), equipamentoSerial: z.string().optional().nullable(),
-  fotoFachadaUrl: z.string().optional().nullable(), telefoneContato: z.string().optional().nullable(), tecnicoId: z.string().uuid().optional().nullable(),
+  fotoFachadaUrl: optionalPhotoSchema, telefoneContato: z.string().optional().nullable(), tecnicoId: z.string().uuid().optional().nullable(),
   status: z.enum(['ABERTO', 'ROTEIRIZADO', 'CONCLUIDO', 'FALHA_TENTATIVA', 'EM_OBSERVACAO']).optional(),
 }).superRefine((data, context) => {
   if (data.telefoneContato && data.telefoneContato.replace(/\D/g, '').length !== 11) {
@@ -28,9 +38,9 @@ const createOrderSchema = z.object({
 });
 
 const updateStatusSchema = z.object({
-  status: z.enum(['ABERTO', 'ROTEIRIZADO', 'CONCLUIDO', 'FALHA_TENTATIVA']),
+  status: z.enum(['CONCLUIDO', 'FALHA_TENTATIVA']),
   substatusFalha: z.enum(['CLIENTE_AUSENTE', 'RECUSA', 'MUDOU_SE', 'ENDERECO_NAO_LOCALIZADO']).optional().nullable(),
-  fotoSerialUrl: z.string().min(1).optional().nullable(), fotoFachadaUrl: z.string().min(1).optional().nullable(),
+  fotoSerialUrl: optionalPhotoSchema, fotoFachadaUrl: optionalPhotoSchema,
 });
 
 const observationSchema = z.object({ texto: z.string().min(2, 'Observação obrigatória.') });
@@ -58,9 +68,10 @@ export async function deleteOrderController(req: Request, res: Response) {
 }
 
 export async function createOrderController(req: Request, res: Response) {
+  if (!req.user?.id) return res.status(401).json({ message: 'Usuário não autenticado.' });
   const parsed = createOrderSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: 'Dados inválidos.', errors: parsed.error.flatten() });
-  try { return res.status(201).json(await createOrder({ ...parsed.data, criadoPorId: req.user?.id })); } catch { return res.status(500).json({ message: 'Erro ao criar remoção.' }); }
+  try { return res.status(201).json(await createOrder({ ...parsed.data, criadoPorId: req.user.id, criadoPorMasterAdmin: req.user.roles.includes('MASTER_ADMIN') })); } catch { return res.status(500).json({ message: 'Erro ao criar remoção.' }); }
 }
 
 export async function assignTechnicianController(req: Request, res: Response) {
@@ -69,9 +80,10 @@ export async function assignTechnicianController(req: Request, res: Response) {
 }
 
 export async function updateStatusController(req: Request, res: Response) {
+  if (!req.user?.id) return res.status(401).json({ message: 'Usuário não autenticado.' });
   const parsed = updateStatusSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: 'Dados de status inválidos.', errors: parsed.error.flatten() });
-  try { return res.status(200).json(await updateOrderStatus(req.params.id, parsed.data)); } catch (error) { return res.status(400).json({ message: error instanceof Error ? error.message : 'Erro ao atualizar status.' }); }
+  try { return res.status(200).json(await updateOrderStatus(req.params.id, parsed.data, req.user.id, req.user.roles.includes('MASTER_ADMIN'))); } catch (error) { return res.status(400).json({ message: error instanceof Error ? error.message : 'Erro ao atualizar status.' }); }
 }
 
 export async function addObservationController(req: Request, res: Response) {

@@ -1,4 +1,4 @@
-import { JanelaChecklist, Prisma, StatusChecklist, StatusOrdemRemocao, TipoRespostaChecklist } from '@prisma/client';
+import { JanelaChecklist, Prisma, StatusChecklist, StatusOrdemRemocao, StatusRotaRemocao, TipoRespostaChecklist } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
 
 export type DashboardPeriod = { from?: Date; to?: Date };
@@ -16,7 +16,7 @@ export async function getDashboardSummary(period: DashboardPeriod, checklistUsua
   const morningDeadline = new Date(now.getTime() - 30 * 60 * 1000);
   const eveningDeadline = new Date(now.getTime() - 45 * 60 * 1000);
 
-  const [pendingChecklists, filledChecklists, lateFilledChecklists, unresolvedResponses, completedRemovals, openRemovals, failedRemovals] = await Promise.all([
+  const [pendingChecklists, filledChecklists, lateFilledChecklists, unresolvedResponses, completedRemovals, openRemovals, failedRemovals, openRoutes] = await Promise.all([
     prisma.checklist.count({
       where: {
         excluidoEm: null,
@@ -39,11 +39,17 @@ export async function getDashboardSummary(period: DashboardPeriod, checklistUsua
     prisma.ordemRemocao.count({ where: { ...removalDateWhere, status: StatusOrdemRemocao.CONCLUIDO } }),
     prisma.ordemRemocao.count({ where: { ...removalDateWhere, status: { in: [StatusOrdemRemocao.ABERTO, StatusOrdemRemocao.ROTEIRIZADO] } } }),
     prisma.ordemRemocao.count({ where: { ...removalDateWhere, status: StatusOrdemRemocao.FALHA_TENTATIVA } }),
+    prisma.rotaRemocao.count({
+      where: {
+        status: StatusRotaRemocao.EM_ANDAMENTO,
+        paradas: { some: { ordem: { status: StatusOrdemRemocao.ROTEIRIZADO } } },
+      },
+    }),
   ]);
 
   return {
     checklists: { pending: pendingChecklists, filled: filledChecklists, filledLate: lateFilledChecklists, issuesToResolve: unresolvedResponses },
-    removals: { completed: completedRemovals, open: openRemovals, failed: failedRemovals, routes: null as number | null },
+    removals: { completed: completedRemovals, open: openRemovals, failed: failedRemovals, routes: openRoutes },
   };
 }
 

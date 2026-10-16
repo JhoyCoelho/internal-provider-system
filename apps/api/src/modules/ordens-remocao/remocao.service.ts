@@ -1,6 +1,7 @@
-import { Prisma, StatusOrdemRemocao, StatusRotaRemocao, SubstatusFalha } from '@prisma/client';
+import { Prisma, StatusOrdemRemocao, StatusRotaRemocao, SubstatusFalha, TipoFotoRemocao } from '@prisma/client';
 import { prisma } from '../../lib/prisma.js';
 import { closeRoutesForOrder } from './rotas.service.js';
+import { createAuditLogInTransaction } from '../auditoria/auditoria.service.js';
 
 export type CreateOrderInput = {
   clienteNome: string;
@@ -15,6 +16,7 @@ export type CreateOrderInput = {
   fotoFachadaUrl?: string | null;
   tecnicoId?: string | null;
   criadoPorId?: string | null;
+  criadoPorMasterAdmin?: boolean;
   status?: StatusOrdemRemocao;
 };
 
@@ -40,14 +42,23 @@ export async function listOrders(filters?: { status?: StatusOrdemRemocao; client
   return prisma.ordemRemocao.findMany({
     where,
     orderBy: [{ createdAt: 'desc' }],
-    include: { tecnico: { select: { id: true, nome: true, email: true } }, criadoPor: { select: { id: true, nome: true } }, observacoes: { orderBy: { createdAt: 'desc' }, include: { usuario: { select: { nome: true } } } } },
+    select: {
+      id: true, clienteNome: true, endereco: true, numero: true, bairro: true, pontoReferencia: true,
+      localizacao: true, equipamentoSerial: true, telefoneContato: true, tentativasFalha: true, status: true, createdAt: true,
+      observacoes: { orderBy: { createdAt: 'desc' }, include: { usuario: { select: { nome: true } } } },
+    },
   });
 }
 
 export async function getOrderById(id: string) {
   return prisma.ordemRemocao.findUnique({
     where: { id },
-    include: { tecnico: { select: { id: true, nome: true, email: true } }, criadoPor: { select: { id: true, nome: true } }, observacoes: { orderBy: { createdAt: 'desc' }, include: { usuario: { select: { nome: true } } } } },
+    include: {
+      tecnico: { select: { id: true, nome: true, email: true } },
+      criadoPor: { select: { id: true, nome: true } },
+      observacoes: { orderBy: { createdAt: 'desc' }, include: { usuario: { select: { nome: true } } } },
+      fotos: { orderBy: { createdAt: 'desc' }, include: { usuario: { select: { id: true, nome: true } } } },
+    },
   });
 }
 
@@ -81,23 +92,48 @@ export async function deleteRemovalOrder(id: string) {
 }
 
 export async function createOrder(input: CreateOrderInput) {
-  return prisma.ordemRemocao.create({
-    data: {
-      clienteNome: input.clienteNome.trim(),
-      endereco: input.endereco.trim(),
-      numero: input.numero.trim(),
-      bairro: input.bairro.trim(),
-      pontoReferencia: input.pontoReferencia.trim(),
-      localizacao: input.localizacao.trim(),
-      regiao: input.regiao?.trim() || input.bairro.trim(),
-      equipamentoSerial: input.equipamentoSerial?.trim() || null,
-      telefoneContato: input.telefoneContato?.trim() || null,
-      fotoFachadaUrl: input.fotoFachadaUrl || null,
-      status: input.status ?? StatusOrdemRemocao.ABERTO,
-      tecnicoId: input.tecnicoId ?? null,
-      criadoPorId: input.criadoPorId ?? null,
-    },
-    include: { tecnico: { select: { id: true, nome: true, email: true } } },
+  return prisma.$transaction(async (transaction) => {
+    const creator = input.criadoPorId
+      ? await transaction.usuario.findUnique({ where: { id: input.criadoPorId }, select: { nome: true } })
+      : null;
+    const order = await transaction.ordemRemocao.create({
+      data: {
+        clienteNome: input.clienteNome.trim(),
+        endereco: input.endereco.trim(),
+        numero: input.numero.trim(),
+        bairro: input.bairro.trim(),
+        pontoReferencia: input.pontoReferencia.trim(),
+        localizacao: input.localizacao.trim(),
+        regiao: input.regiao?.trim() || input.bairro.trim(),
+        equipamentoSerial: input.equipamentoSerial?.trim() || null,
+        telefoneContato: input.telefoneContato?.trim() || null,
+        fotoFachadaUrl: input.fotoFachadaUrl || null,
+        status: input.status ?? StatusOrdemRemocao.ABERTO,
+        tecnicoId: input.tecnicoId ?? null,
+        criadoPorId: input.criadoPorId ?? null,
+      },
+      include: { tecnico: { select: { id: true, nome: true, email: true } } },
+    });
+    if (input.fotoFachadaUrl) {
+      await transaction.fotoRemocao.create({
+        data: {
+          ordemId: order.id,
+          usuarioId: input.criadoPorId ?? null,
+          usuarioNome: creator?.nome ?? 'Sistema',
+          tipo: TipoFotoRemocao.FOTO_FACHADA,
+          imagemDataUrl: input.fotoFachadaUrl,
+        },
+      });
+    }
+    await createAuditLogInTransaction(transaction, {
+      usuarioId: input.criadoPorId,
+      autorMasterAdmin: input.criadoPorMasterAdmin,
+      acao: 'REMOCAO_CRIADA',
+      entidade: 'REMOCAO',
+      entidadeId: order.id,
+      valorNovo: { status: order.status, clienteNome: order.clienteNome, fotoFachadaRegistrada: Boolean(input.fotoFachadaUrl) },
+    });
+    return order;
   });
 }
 
@@ -118,32 +154,63 @@ export async function assignTechnician(orderId: string, tecnicoId: string) {
   });
 }
 
-export async function updateOrderStatus(orderId: string, payload: UpdateOrderStatusInput) {
-  const order = await prisma.ordemRemocao.findUnique({ where: { id: orderId } });
-  if (!order) throw new Error('Ordem de remoção não encontrada.');
-  if (order.status === StatusOrdemRemocao.EM_OBSERVACAO && payload.status !== StatusOrdemRemocao.CONCLUIDO) {
-    throw new Error('Esta ordem está em observação. O status só poderá mudar quando a remoção for concluída.');
-  }
-  if (order.status === StatusOrdemRemocao.CONCLUIDO && payload.status !== StatusOrdemRemocao.CONCLUIDO) {
-    throw new Error('Uma remoção concluída não pode voltar para outro status.');
-  }
+export async function updateOrderStatus(orderId: string, payload: UpdateOrderStatusInput, actorId: string, actorIsMasterAdmin: boolean) {
+  const updated = await prisma.$transaction(async (transaction) => {
+    const [order, actor] = await Promise.all([
+      transaction.ordemRemocao.findUnique({ where: { id: orderId } }),
+      transaction.usuario.findUnique({ where: { id: actorId }, select: { nome: true } }),
+    ]);
+    if (!order) throw new Error('Ordem de remoção não encontrada.');
+    if (!actor) throw new Error('Usuário responsável não encontrado.');
+    if (order.status === StatusOrdemRemocao.EM_OBSERVACAO && payload.status !== StatusOrdemRemocao.CONCLUIDO) {
+      throw new Error('Esta ordem está em observação. O status só poderá mudar quando a remoção for concluída.');
+    }
+    if (order.status === StatusOrdemRemocao.CONCLUIDO && payload.status !== StatusOrdemRemocao.CONCLUIDO) {
+      throw new Error('Uma remoção concluída não pode voltar para outro status.');
+    }
 
-  const fotoSerialUrl = payload.fotoSerialUrl ?? order.fotoSerialUrl;
-  const fotoFachadaUrl = payload.fotoFachadaUrl ?? order.fotoFachadaUrl;
-  const substatusFalha = payload.substatusFalha ?? order.substatusFalha;
+    const fotoSerialUrl = payload.fotoSerialUrl ?? order.fotoSerialUrl;
+    const fotoFachadaUrl = payload.fotoFachadaUrl ?? order.fotoFachadaUrl;
+    const substatusFalha = payload.substatusFalha ?? order.substatusFalha;
 
-  if (payload.status === StatusOrdemRemocao.CONCLUIDO && !fotoSerialUrl) throw new Error('A ordem concluída exige foto do roteador/serial.');
-  if (payload.status === StatusOrdemRemocao.FALHA_TENTATIVA && (!substatusFalha || !fotoFachadaUrl)) throw new Error('A falha na tentativa exige substatus e foto da fachada.');
+    if (payload.status === StatusOrdemRemocao.CONCLUIDO && !payload.fotoSerialUrl) throw new Error('A ordem concluída exige uma nova foto do roteador/serial.');
+    if (payload.status === StatusOrdemRemocao.FALHA_TENTATIVA && (!substatusFalha || !payload.fotoFachadaUrl)) throw new Error('A falha na tentativa exige substatus e uma nova foto da fachada.');
 
-  const tentativasFalha = order.tentativasFalha + (payload.status === StatusOrdemRemocao.FALHA_TENTATIVA ? 1 : 0);
-  const effectiveStatus = payload.status === StatusOrdemRemocao.FALHA_TENTATIVA && tentativasFalha >= 3
-    ? StatusOrdemRemocao.EM_OBSERVACAO
-    : payload.status;
+    const tentativasFalha = order.tentativasFalha + (payload.status === StatusOrdemRemocao.FALHA_TENTATIVA ? 1 : 0);
+    const effectiveStatus = payload.status === StatusOrdemRemocao.FALHA_TENTATIVA && tentativasFalha >= 3
+      ? StatusOrdemRemocao.EM_OBSERVACAO
+      : payload.status;
 
-  const updated = await prisma.ordemRemocao.update({
-    where: { id: orderId },
-    data: { status: effectiveStatus, tentativasFalha, substatusFalha, fotoSerialUrl, fotoFachadaUrl },
-    include: { tecnico: { select: { id: true, nome: true, email: true } } },
+    await transaction.ordemRemocao.update({
+      where: { id: orderId },
+      data: { status: effectiveStatus, tentativasFalha, substatusFalha, fotoSerialUrl, fotoFachadaUrl },
+    });
+    const isConclusion = payload.status === StatusOrdemRemocao.CONCLUIDO;
+    await transaction.fotoRemocao.create({
+      data: {
+        ordemId: orderId,
+        usuarioId: actorId,
+        usuarioNome: actor.nome,
+        tipo: isConclusion ? TipoFotoRemocao.FOTO_SERIAL : TipoFotoRemocao.FOTO_FACHADA,
+        imagemDataUrl: isConclusion ? payload.fotoSerialUrl! : payload.fotoFachadaUrl!,
+      },
+    });
+    await createAuditLogInTransaction(transaction, {
+      usuarioId: actorId,
+      autorMasterAdmin: actorIsMasterAdmin,
+      acao: isConclusion ? 'REMOCAO_CONCLUIDA' : 'FALHA_TENTATIVA_REMOCAO',
+      entidade: 'REMOCAO',
+      entidadeId: orderId,
+      valorAntigo: { status: order.status },
+      valorNovo: { status: effectiveStatus, tentativasFalha, substatusFalha, fotoRegistrada: true },
+    });
+    return transaction.ordemRemocao.findUniqueOrThrow({
+      where: { id: orderId },
+      include: {
+        tecnico: { select: { id: true, nome: true, email: true } },
+        fotos: { orderBy: { createdAt: 'desc' }, include: { usuario: { select: { id: true, nome: true } } } },
+      },
+    });
   });
   await closeRoutesForOrder(orderId);
   return updated;

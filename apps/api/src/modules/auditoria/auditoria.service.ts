@@ -13,26 +13,26 @@ export type AuditLogInput = {
   autorMasterAdmin?: boolean;
 };
 
+function auditLogData(input: AuditLogInput): Prisma.LogAuditoriaCreateInput {
+  return {
+    usuario: input.usuarioId ? { connect: { id: input.usuarioId } } : undefined,
+    autorMasterAdmin: input.autorMasterAdmin ?? false,
+    acao: input.acao,
+    entidade: input.entidade,
+    entidadeId: input.entidadeId ?? null,
+    valorAntigo: input.valorAntigo === undefined || input.valorAntigo === null ? Prisma.JsonNull : input.valorAntigo,
+    valorNovo: input.valorNovo === undefined || input.valorNovo === null ? Prisma.JsonNull : input.valorNovo,
+    ipAddress: input.ipAddress ?? null,
+    userAgent: input.userAgent ?? null,
+  };
+}
+
 export async function createAuditLog(input: AuditLogInput) {
-  return prisma.logAuditoria.create({
-    data: {
-      usuarioId: input.usuarioId ?? null,
-      autorMasterAdmin: input.autorMasterAdmin ?? false,
-      acao: input.acao,
-      entidade: input.entidade,
-      entidadeId: input.entidadeId ?? null,
-      valorAntigo:
-        input.valorAntigo === undefined || input.valorAntigo === null
-          ? Prisma.JsonNull
-          : (input.valorAntigo as Prisma.InputJsonValue),
-      valorNovo:
-        input.valorNovo === undefined || input.valorNovo === null
-          ? Prisma.JsonNull
-          : (input.valorNovo as Prisma.InputJsonValue),
-      ipAddress: input.ipAddress ?? null,
-      userAgent: input.userAgent ?? null,
-    },
-  });
+  return prisma.logAuditoria.create({ data: auditLogData(input) });
+}
+
+export async function createAuditLogInTransaction(transaction: Prisma.TransactionClient, input: AuditLogInput) {
+  return transaction.logAuditoria.create({ data: auditLogData(input) });
 }
 
 export async function listAuditLogs(filters?: {

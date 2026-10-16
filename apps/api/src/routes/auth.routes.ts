@@ -59,6 +59,8 @@ router.post('/login', loginRateLimit, async (req, res) => {
       return res.status(401).json({ message: 'Credenciais inválidas.' });
     }
 
+    await prisma.usuario.update({ where: { id: user.id }, data: { ultimoLogin: new Date() } });
+
     const roles = user.roles.map((relation) => String(relation.perfil.code));
     const permissions = user.roles.flatMap((relation) => relation.perfil.permissoes.map((item) => String(item.permissao.code)));
     const token = signToken({

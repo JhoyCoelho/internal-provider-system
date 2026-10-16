@@ -13,6 +13,7 @@ const items: { href: string; label: string; permission?: string; roles?: string[
   { href: '/dashboard/remocao', label: 'Remoção', permission: 'ORDERS_READ' },
   { href: '/dashboard/checklists', label: 'Checklists', roles: ['TECNICO', 'MASTER_ADMIN'], permission: 'CHECKLIST_READ', allowPendingTerm: true },
   { href: '/dashboard/caixa', label: 'Caixa', permission: 'CASH_READ', disabled: true },
+  { href: '/dashboard/gdm', label: 'GDM', role: 'MASTER_ADMIN', disabled: true },
   { href: '/dashboard/auditoria', label: 'Auditoria', roles: ['MASTER_ADMIN'], permission: 'AUDIT_READ' },
   { href: '/dashboard/administracao', label: 'Administração', role: 'MASTER_ADMIN' },
 ];

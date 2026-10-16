@@ -1,12 +1,14 @@
 'use client';
 
-import { ChangeEvent, FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { apiFetch } from '../../lib/api';
 import { useAuth } from '../../providers/auth-provider';
 import { LocationPicker } from './location-picker';
+import { CameraCapture } from './camera-capture';
 
 type Status = 'ABERTO' | 'ROTEIRIZADO' | 'CONCLUIDO' | 'FALHA_TENTATIVA' | 'EM_OBSERVACAO';
 type Observation = { id: string; texto: string; createdAt: string; usuario: { nome: string } | null };
+type RemovalPhoto = { id: string; tipo: 'FOTO_SERIAL' | 'FOTO_FACHADA'; imagemDataUrl: string; usuarioNome: string; createdAt: string };
 type Order = {
   id: string;
   clienteNome: string;
@@ -17,6 +19,9 @@ type Order = {
   localizacao: string;
   equipamentoSerial: string | null;
   telefoneContato: string | null;
+  fotoSerialUrl?: string | null;
+  fotoFachadaUrl?: string | null;
+  fotos?: RemovalPhoto[];
   tentativasFalha: number;
   status: Status;
   createdAt: string;
@@ -30,43 +35,6 @@ type PhotoTarget = 'serial' | 'facade';
 const labels: Record<Status, string> = { ABERTO: 'Aberto', ROTEIRIZADO: 'Roteirizado', CONCLUIDO: 'Concluído', FALHA_TENTATIVA: 'Falha na tentativa', EM_OBSERVACAO: 'Em observação' };
 const styles: Record<Status, string> = { ABERTO: 'bg-sky-100 text-sky-700', ROTEIRIZADO: 'bg-amber-100 text-amber-700', CONCLUIDO: 'bg-emerald-100 text-emerald-700', FALHA_TENTATIVA: 'bg-rose-100 text-rose-700', EM_OBSERVACAO: 'bg-orange-100 text-orange-800' };
 const emptyForm = { clienteNome: '', endereco: '', numero: '', bairro: '', pontoReferencia: '', localizacao: '', equipamentoSerial: '', telefoneContato: '', fotoFachadaUrl: '' };
-
-function fileToDataUrl(event: ChangeEvent<HTMLInputElement>, setValue: (value: string) => void) {
-  const file = event.target.files?.[0];
-  if (!file) return;
-  const imageUrl = URL.createObjectURL(file);
-  const image = new Image();
-  image.onload = () => {
-    URL.revokeObjectURL(imageUrl);
-    let scale = Math.min(1, 1920 / Math.max(image.naturalWidth, image.naturalHeight));
-    let quality = 0.86;
-    let blob: Blob | null = null;
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-    if (!context) { window.alert('Não foi possível processar a imagem. Tente outro arquivo.'); return; }
-    const encode = (nextScale: number, nextQuality: number) => new Promise<Blob | null>((resolve) => {
-      canvas.width = Math.round(image.naturalWidth * nextScale);
-      canvas.height = Math.round(image.naturalHeight * nextScale);
-      context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(resolve, 'image/jpeg', nextQuality);
-    });
-    void (async () => {
-      for (let attempt = 0; attempt < 7; attempt += 1) {
-        blob = await encode(scale, quality);
-        if (blob && blob.size <= 3 * 1024 * 1024) break;
-        if (quality > 0.58) quality -= 0.08;
-        else scale *= 0.8;
-      }
-      if (!blob || blob.size > 3 * 1024 * 1024) { window.alert('A imagem é muito grande. Escolha uma imagem menor.'); return; }
-      const reader = new FileReader();
-      reader.onload = () => setValue(String(reader.result));
-      reader.onerror = () => window.alert('Não foi possível ler a imagem selecionada.');
-      reader.readAsDataURL(blob);
-    })();
-  };
-  image.onerror = () => { URL.revokeObjectURL(imageUrl); window.alert('Não foi possível abrir esta imagem. Selecione uma foto JPG, PNG ou WebP.'); };
-  image.src = imageUrl;
-}
 
 function formatPhone(value: string) {
   const digits = value.replace(/\D/g, '').slice(0, 11);
@@ -98,6 +66,7 @@ export default function RemocaoPage() {
   const [facadePhoto, setFacadePhoto] = useState('');
   const [serialPhotoName, setSerialPhotoName] = useState('');
   const [facadePhotoName, setFacadePhotoName] = useState('');
+  const [cameraTarget, setCameraTarget] = useState<'serial' | 'facade' | 'new-order-facade' | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -158,14 +127,35 @@ export default function RemocaoPage() {
     finally { setSavingRemoval(false); }
   }
 
-  function openOrder(order: Order) {
+  async function openOrder(order: Order) {
     setSelected({ ...order, observacoes: order.observacoes ?? [] });
     setSerialPhoto('');
     setFacadePhoto('');
     setSerialPhotoName('');
     setFacadePhotoName('');
+    setCameraTarget(null);
     setOrderMessage(null);
     setMessage(null);
+    try {
+      const detail = await apiFetch<Order>(`/api/ordens-remocao/${order.id}`);
+      setSelected((current) => current?.id === order.id ? { ...detail, observacoes: detail.observacoes ?? [] } : current);
+    } catch (error) {
+      setOrderMessage(error instanceof Error ? error.message : 'Não foi possível carregar os detalhes da remoção.');
+    }
+  }
+
+  function completeCameraCapture(imageDataUrl: string) {
+    if (cameraTarget === 'serial') {
+      setSerialPhoto(imageDataUrl);
+      setSerialPhotoName('Foto capturada');
+    } else if (cameraTarget === 'facade') {
+      setFacadePhoto(imageDataUrl);
+      setFacadePhotoName('Foto capturada');
+    } else if (cameraTarget === 'new-order-facade') {
+      setForm((current) => ({ ...current, fotoFachadaUrl: imageDataUrl }));
+    }
+    setCameraTarget(null);
+    setOrderMessage(null);
   }
 
   async function deleteOrder(order: Order) {
@@ -296,16 +286,29 @@ export default function RemocaoPage() {
 
       {routePlan && <section className="card space-y-3 p-5"><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-lg font-semibold text-slate-900">Rota · {routePlan.status === 'EM_ANDAMENTO' ? 'Em andamento' : routePlan.status === 'CONCLUIDA' ? 'Concluída' : 'Cancelada'}</h2><p className="text-sm text-slate-600">{routePlan.paradas.length} paradas · cerca de {routePlan.distanciaKm.toFixed(1)} km em linha geográfica</p></div><button type="button" onClick={() => setRoutePlan(null)} className="text-sm text-slate-500">Fechar rota</button></div><p className="text-xs text-slate-500">Sequência aproximada por proximidade; cada etapa abre no Google Maps para calcular o trajeto pelas ruas.</p><ol className="space-y-2">{routePlan.paradas.map((stop, index) => { const origin = index === 0 ? routePlan.origem : routePlan.paradas[index - 1].ordem.localizacao; const mapUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(stop.ordem.localizacao)}&travelmode=driving`; return <li key={stop.id} className="flex flex-col gap-2 rounded-lg border border-slate-200 p-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-semibold uppercase text-slate-500">Parada {stop.sequencia}</p><p className="font-medium text-slate-900">{stop.ordem.clienteNome}</p><p className="text-sm text-slate-600">{stop.ordem.endereco}, {stop.ordem.numero} · {stop.ordem.bairro}</p></div><a href={mapUrl} target="_blank" rel="noreferrer" className="rounded-lg bg-slate-900 px-3 py-2 text-center text-sm font-semibold text-white">Navegar até a parada</a></li>; })}</ol></section>}
 
-      {showForm && <form onSubmit={createRemoval} className="card grid gap-3 p-5 sm:grid-cols-2"><h2 className="text-lg font-semibold sm:col-span-2">Dados da remoção</h2>{([['clienteNome', 'Nome completo do cliente'], ['endereco', 'Endereço'], ['numero', 'Número (digite S/N caso não tenha número)'], ['bairro', 'Bairro'], ['pontoReferencia', 'Ponto de referência']] as const).map(([field, label]) => <label key={field} className="text-sm font-medium text-slate-700">{label} <span className="text-rose-600">*</span><input required value={form[field]} onChange={(event) => setForm((current) => ({ ...current, [field]: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal" /></label>)}<div className="sm:col-span-2"><p className="text-sm font-medium text-slate-700">Localização exata <span className="text-rose-600">*</span></p><div className="mt-1"><LocationPicker value={form.localizacao} onChange={(value) => setForm((current) => ({ ...current, localizacao: value }))} /></div></div><label className="text-sm font-medium text-slate-700">Serial do aparelho (opcional)<input inputMode="text" maxLength={12} value={form.equipamentoSerial} onChange={(event) => setForm((current) => ({ ...current, equipamentoSerial: event.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 12).toUpperCase() }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal" placeholder="12 caracteres" />{form.equipamentoSerial && form.equipamentoSerial.length !== 12 && <span className="text-xs text-rose-600">O serial deve conter 12 caracteres alfanuméricos.</span>}</label><label className="text-sm font-medium text-slate-700">Número para contato (opcional)<input inputMode="tel" value={form.telefoneContato} onChange={(event) => setForm((current) => ({ ...current, telefoneContato: formatPhone(event.target.value) }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal" placeholder="91 98533-4309" />{form.telefoneContato && form.telefoneContato.replace(/\D/g, '').length !== 11 && <span className="text-xs text-rose-600">Informe DDD e número com 11 dígitos.</span>}</label><label className="text-sm font-medium text-slate-700 sm:col-span-2">Foto da fachada (opcional)<input type="file" accept="image/*" onChange={(event) => fileToDataUrl(event, (value) => setForm((current) => ({ ...current, fotoFachadaUrl: value })))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal" /></label>{formError && <p className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700 sm:col-span-2">{formError}</p>}<button type="submit" disabled={savingRemoval} className="rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white disabled:opacity-60 sm:col-span-2">{savingRemoval ? 'Criando remoção...' : 'Criar remoção'}</button></form>}
+      {showForm && <form onSubmit={createRemoval} className="card grid gap-3 p-5 sm:grid-cols-2">
+        <h2 className="text-lg font-semibold sm:col-span-2">Dados da remoção</h2>
+        {([['clienteNome', 'Nome completo do cliente'], ['endereco', 'Endereço'], ['numero', 'Número (digite S/N caso não tenha número)'], ['bairro', 'Bairro'], ['pontoReferencia', 'Ponto de referência']] as const).map(([field, label]) => <label key={field} className="text-sm font-medium text-slate-700">{label} <span className="text-rose-600">*</span><input required value={form[field]} onChange={(event) => setForm((current) => ({ ...current, [field]: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal" /></label>)}
+        <div className="sm:col-span-2"><p className="text-sm font-medium text-slate-700">Localização exata <span className="text-rose-600">*</span></p><div className="mt-1"><LocationPicker value={form.localizacao} onChange={(value) => setForm((current) => ({ ...current, localizacao: value }))} /></div></div>
+        <label className="text-sm font-medium text-slate-700">Serial do aparelho (opcional)<input inputMode="text" maxLength={12} value={form.equipamentoSerial} onChange={(event) => setForm((current) => ({ ...current, equipamentoSerial: event.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 12).toUpperCase() }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal" placeholder="12 caracteres" />{form.equipamentoSerial && form.equipamentoSerial.length !== 12 && <span className="text-xs text-rose-600">O serial deve conter 12 caracteres alfanuméricos.</span>}</label>
+        <label className="text-sm font-medium text-slate-700">Número para contato (opcional)<input inputMode="tel" value={form.telefoneContato} onChange={(event) => setForm((current) => ({ ...current, telefoneContato: formatPhone(event.target.value) }))} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal" placeholder="91 98533-4309" />{form.telefoneContato && form.telefoneContato.replace(/\D/g, '').length !== 11 && <span className="text-xs text-rose-600">Informe DDD e número com 11 dígitos.</span>}</label>
+        <div className="space-y-2 sm:col-span-2"><p className="text-sm font-medium text-slate-700">Foto da fachada (opcional)</p><button type="button" onClick={() => setCameraTarget('new-order-facade')} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700">Registrar com a câmera</button>{cameraTarget === 'new-order-facade' && <CameraCapture onCapture={completeCameraCapture} onCancel={() => setCameraTarget(null)} />}{form.fotoFachadaUrl && <div className="flex items-center gap-3"><img src={form.fotoFachadaUrl} alt="Prévia da foto capturada" className="h-20 w-28 rounded-md object-cover" /><button type="button" onClick={() => setForm((current) => ({ ...current, fotoFachadaUrl: '' }))} className="text-sm text-rose-700">Remover foto</button></div>}</div>
+        {formError && <p className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700 sm:col-span-2">{formError}</p>}
+        <button type="submit" disabled={savingRemoval} className="rounded-xl bg-emerald-600 px-4 py-3 font-semibold text-white disabled:opacity-60 sm:col-span-2">{savingRemoval ? 'Criando remoção...' : 'Criar remoção'}</button>
+      </form>}
 
       <section className="card grid gap-3 p-4 sm:grid-cols-[180px_1fr_180px]"><select value={filterField} onChange={(event) => setFilterField(event.target.value as FilterField)} className="rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"><option value="clienteNome">Nome do cliente</option><option value="endereco">Endereço</option><option value="numero">Número</option><option value="bairro">Bairro</option><option value="pontoReferencia">Ponto de referência</option></select><input value={filterValue} onChange={(event) => setFilterValue(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm" placeholder="Digite para filtrar" /><select value={status} onChange={(event) => setStatus(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm"><option value="">Todos os status</option>{Object.entries(labels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></section>
       {message && <p className="rounded-lg bg-slate-100 px-4 py-3 text-sm">{message}</p>}
       {loading ? <p className="p-4 text-sm text-slate-500">Carregando remoções...</p> : <section className="grid gap-3">{orders.map((order) => <article key={order.id} className="card p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex flex-wrap items-center gap-2"><h2 className="font-semibold text-slate-900">{order.clienteNome}</h2><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${styles[order.status]}`}>{labels[order.status]}</span></div><p className="mt-2 text-sm text-slate-600">{order.endereco}, {order.numero} · {order.bairro}</p><p className="mt-1 text-xs text-slate-500">Referência: {order.pontoReferencia}</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={() => openOrder(order)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium">Consultar ordem</button>{canDeleteOrder && <button type="button" disabled={deletingOrderId === order.id} onClick={() => void deleteOrder(order)} className="rounded-lg border border-rose-300 px-3 py-2 text-sm font-semibold text-rose-700 disabled:opacity-50">{deletingOrderId === order.id ? 'Excluindo...' : 'Excluir ordem'}</button>}</div></div></article>)}</section>}
 
-      {selected && <div className="fixed inset-0 z-10 overflow-y-auto bg-slate-950/40 p-4"><section className="mx-auto max-w-2xl rounded-2xl bg-white p-5 shadow-2xl"><div className="flex items-start justify-between gap-4"><div><h2 className="text-xl font-bold text-slate-900">Ordem de remoção</h2><p className="mt-1 text-sm text-slate-500">{selected.clienteNome} · {labels[selected.status]}</p></div><button type="button" onClick={() => setSelected(null)} className="text-sm text-slate-500">Fechar</button></div>
+      {selected && <div className="fixed inset-0 z-10 overflow-y-auto bg-slate-950/40 p-4"><section className="mx-auto max-w-2xl rounded-2xl bg-white p-5 shadow-2xl"><div className="flex items-start justify-between gap-4"><div><h2 className="text-xl font-bold text-slate-900">Ordem de remoção</h2><p className="mt-1 text-sm text-slate-500">{selected.clienteNome} · {labels[selected.status]}</p></div><button type="button" onClick={() => { setSelected(null); setCameraTarget(null); }} className="text-sm text-slate-500">Fechar</button></div>
         <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-slate-500">Endereço</dt><dd>{selected.endereco}, {selected.numero}</dd></div><div><dt className="text-slate-500">Bairro</dt><dd>{selected.bairro}</dd></div><div><dt className="text-slate-500">Ponto de referência</dt><dd>{selected.pontoReferencia}</dd></div><div><dt className="text-slate-500">Serial</dt><dd>{selected.equipamentoSerial || 'Não informado'}</dd></div><div><dt className="text-slate-500">Tentativas sem sucesso</dt><dd>{selected.tentativasFalha}</dd></div><div className="sm:col-span-2"><dt className="text-slate-500">Localização</dt><dd><a className="font-medium text-brand-600 underline" target="_blank" rel="noreferrer" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selected.localizacao)}`}>Abrir no Google Maps</a></dd></div></dl>
+        {selected.fotos?.length ? <section className="mt-5 border-t border-slate-200 pt-4"><h3 className="font-semibold text-slate-900">Fotos registradas</h3><div className="mt-3 grid gap-3 sm:grid-cols-2">{selected.fotos.map((photo) => <figure key={photo.id} className="rounded-lg border border-slate-200 p-3"><img src={photo.imagemDataUrl} alt={photo.tipo === 'FOTO_SERIAL' ? 'Foto do aparelho e serial' : 'Foto da fachada'} className="max-h-64 w-full rounded-md bg-slate-50 object-contain" /><figcaption className="mt-2 text-xs text-slate-600">{photo.tipo === 'FOTO_SERIAL' ? 'Aparelho / serial' : 'Fachada'} · {photo.usuarioNome} · {new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(photo.createdAt))}</figcaption></figure>)}</div></section> : <p className="mt-5 border-t border-slate-200 pt-4 text-sm text-slate-500">Nenhuma foto registrada nesta ordem.</p>}
         {selected.status === 'EM_OBSERVACAO' && <p className="mt-4 rounded-lg bg-orange-50 p-3 text-sm text-orange-900">Limite de três tentativas atingido. Esta ordem só pode ser concluída.</p>}
-        {canChangeStatus && selected.status !== 'CONCLUIDO' && <div className="mt-5 grid gap-4 border-t border-slate-200 pt-4 sm:grid-cols-2"><div className="rounded-xl border border-slate-200 p-3"><p className="text-sm font-semibold text-slate-800">Concluir remoção</p><p className="mt-1 text-xs text-slate-500">Anexe uma foto do aparelho mostrando a etiqueta com o serial.</p><label htmlFor="serial-photo" className="mt-3 flex min-h-12 cursor-pointer items-center justify-center rounded-lg border border-dashed border-slate-400 bg-slate-50 px-3 py-2 text-center text-sm font-semibold text-slate-700 hover:bg-slate-100">{serialPhotoName || 'Escolher foto do aparelho'}</label><input id="serial-photo" type="file" accept="image/*" className="sr-only" onChange={(event) => { setSerialPhotoName(event.target.files?.[0]?.name ?? ''); setOrderMessage(null); fileToDataUrl(event, setSerialPhoto); }} /><button type="button" onClick={() => updateStatus('CONCLUIDO')} className="mt-2 w-full rounded-lg bg-emerald-600 px-3 py-2.5 text-sm font-semibold text-white">Concluir</button></div><div className="rounded-xl border border-slate-200 p-3"><p className="text-sm font-semibold text-slate-800">Falha na tentativa</p><p className="mt-1 text-xs text-slate-500">Anexe uma foto da fachada do local visitado.</p><label htmlFor="facade-photo" className="mt-3 flex min-h-12 cursor-pointer items-center justify-center rounded-lg border border-dashed border-slate-400 bg-slate-50 px-3 py-2 text-center text-sm font-semibold text-slate-700 hover:bg-slate-100">{facadePhotoName || 'Escolher foto da fachada'}</label><input id="facade-photo" type="file" accept="image/*" className="sr-only" onChange={(event) => { setFacadePhotoName(event.target.files?.[0]?.name ?? ''); setOrderMessage(null); fileToDataUrl(event, setFacadePhoto); }} /><button type="button" onClick={() => updateStatus('FALHA_TENTATIVA')} className="mt-2 w-full rounded-lg bg-rose-600 px-3 py-2.5 text-sm font-semibold text-white">Registrar falha</button></div></div>}
+        {canChangeStatus && selected.status !== 'CONCLUIDO' && <div className="mt-5 grid gap-4 border-t border-slate-200 pt-4 sm:grid-cols-2">
+          <div className="rounded-xl border border-slate-200 p-3"><p className="text-sm font-semibold text-slate-800">Concluir remoção</p><p className="mt-1 text-xs text-slate-500">Capture uma foto do aparelho mostrando a etiqueta com o serial.</p><button type="button" onClick={() => setCameraTarget('serial')} className="mt-3 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-semibold text-slate-700">{serialPhotoName || 'Abrir câmera do aparelho'}</button>{cameraTarget === 'serial' && <CameraCapture onCapture={completeCameraCapture} onCancel={() => setCameraTarget(null)} />}{serialPhoto && <img src={serialPhoto} alt="Prévia da foto do serial" className="mt-2 max-h-40 w-full rounded-md object-contain" />}<button type="button" onClick={() => updateStatus('CONCLUIDO')} className="mt-2 w-full rounded-lg bg-emerald-600 px-3 py-2.5 text-sm font-semibold text-white">Concluir</button></div>
+          <div className="rounded-xl border border-slate-200 p-3"><p className="text-sm font-semibold text-slate-800">Falha na tentativa</p><p className="mt-1 text-xs text-slate-500">Capture uma foto da fachada do local visitado.</p><button type="button" onClick={() => setCameraTarget('facade')} className="mt-3 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-semibold text-slate-700">{facadePhotoName || 'Abrir câmera da fachada'}</button>{cameraTarget === 'facade' && <CameraCapture onCapture={completeCameraCapture} onCancel={() => setCameraTarget(null)} />}{facadePhoto && <img src={facadePhoto} alt="Prévia da foto da fachada" className="mt-2 max-h-40 w-full rounded-md object-contain" />}<button type="button" onClick={() => updateStatus('FALHA_TENTATIVA')} className="mt-2 w-full rounded-lg bg-rose-600 px-3 py-2.5 text-sm font-semibold text-white">Registrar falha</button></div>
+        </div>}
         {orderMessage && <p role="alert" className={`mt-3 rounded-lg p-3 text-sm ${orderMessage.includes('sucesso') || orderMessage.includes('registrada') ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-700'}`}>{orderMessage}</p>}
         {canAddNote && <form onSubmit={addNote} className="mt-5 border-t border-slate-200 pt-4"><label className="text-sm font-medium">Nova observação<textarea required value={note} onChange={(event) => setNote(event.target.value)} className="mt-2 min-h-20 w-full rounded-lg border border-slate-300 p-3 text-sm" /></label><button className="mt-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white">Registrar observação</button></form>}
         <div className="mt-5 border-t border-slate-200 pt-4"><h3 className="font-semibold text-slate-900">Histórico de observações</h3>{!selected.observacoes?.length ? <p className="mt-2 text-sm text-slate-500">Nenhuma observação registrada.</p> : <div className="mt-3 space-y-3">{selected.observacoes.map((item) => <div key={item.id} className="rounded-lg bg-slate-50 p-3"><p className="text-sm text-slate-800">{item.texto}</p><p className="mt-1 text-xs text-slate-500">{item.usuario?.nome ?? 'Usuário removido'} · {new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(item.createdAt))}</p></div>)}</div>}</div>
