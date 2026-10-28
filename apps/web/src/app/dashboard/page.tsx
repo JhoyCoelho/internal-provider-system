@@ -48,6 +48,23 @@ function dateRangeLabel(from: string, to: string) {
   return `${from || 'Início'} até ${to || 'Hoje'}`;
 }
 
+function ChecklistIssues({
+  issues,
+  resolvingId,
+  onResolve,
+}: {
+  issues: ChecklistIssue[];
+  resolvingId: string | null;
+  onResolve?: (issue: ChecklistIssue) => void;
+}) {
+  return (
+    <div className="mt-5">
+      <h3 className="font-semibold text-slate-800">Itens a resolver</h3>
+      {!issues.length ? <p className="mt-2 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">Nenhum item pendente de resolução.</p> : <div className="mt-3 space-y-3">{issues.map((issue) => <article key={issue.id} className="flex flex-col gap-3 rounded-xl border border-rose-200 bg-rose-50/50 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold text-slate-900">{issue.template.pergunta}</p><p className="mt-1 text-sm text-slate-600">{issue.checklist.categoria} · {issue.checklist.usuario?.nome ?? issue.checklist.usuarioNome ?? 'Usuário removido'} · {issue.valorBooleano === false ? 'Faltando' : 'Danificado'}</p>{issue.valorTexto && <p className="mt-1 text-sm text-slate-700">{issue.valorTexto}</p>}</div>{onResolve && <button type="button" disabled={resolvingId === issue.id} onClick={() => onResolve(issue)} className="shrink-0 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{resolvingId === issue.id ? 'Resolvendo...' : 'Marcar como Resolvido'}</button>}</article>)}</div>}
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const { user } = useAuth();
   const isTechnician = Boolean(user?.roles.includes('TECNICO'));
@@ -146,7 +163,7 @@ export default function DashboardPage() {
       {isTechnician && <section className="card p-5">
         <div className="mb-5"><h2 className="text-xl font-bold text-slate-900">Checklists</h2><p className="mt-1 text-sm text-slate-500">Pendências, preenchimentos e itens que precisam de atenção.</p></div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{checklistMetrics.map((metric) => <article key={metric.label} className="rounded-xl border border-slate-200 p-4"><p className="text-sm text-slate-500">{metric.label}</p><p className={`mt-2 text-3xl font-bold ${metric.color}`}>{metric.value}</p></article>)}</div>
-        <div className="mt-5"><h3 className="font-semibold text-slate-800">Itens a resolver</h3>{!summary || summary.checklists.issuesToResolve.length === 0 ? <p className="mt-2 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">Nenhum item pendente de resolução.</p> : <div className="mt-3 space-y-3">{summary.checklists.issuesToResolve.map((issue) => <article key={issue.id} className="flex flex-col gap-3 rounded-xl border border-rose-200 bg-rose-50/50 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold text-slate-900">{issue.template.pergunta}</p><p className="mt-1 text-sm text-slate-600">{issue.checklist.categoria} · {issue.checklist.usuario?.nome ?? issue.checklist.usuarioNome ?? 'Usuário removido'} · {issue.valorBooleano === false ? 'Faltando' : 'Danificado'}</p>{issue.valorTexto && <p className="mt-1 text-sm text-slate-700">{issue.valorTexto}</p>}</div></article>)}</div>}</div>
+        <ChecklistIssues issues={summary?.checklists.issuesToResolve ?? []} resolvingId={resolvingId} />
       </section>}
 
       {isMasterAdmin && <section className="card p-5">
@@ -157,6 +174,7 @@ export default function DashboardPage() {
           <article className="rounded-xl border border-emerald-200 bg-emerald-50 p-4"><p className="text-sm text-emerald-800">Preenchidos corretamente</p><p className="mt-2 text-3xl font-bold text-emerald-900">{masterCorrectRecords.length}</p></article>
           <article className="rounded-xl border border-sky-200 bg-sky-50 p-4"><p className="text-sm text-sky-800">Não conformidades a resolver</p><p className="mt-2 text-3xl font-bold text-sky-900">{summary?.checklists.issuesToResolve.length ?? 0}</p></article>
         </div>
+        <ChecklistIssues issues={summary?.checklists.issuesToResolve ?? []} resolvingId={resolvingId} onResolve={resolveIssue} />
       </section>}
 
       <section className="card p-5">
