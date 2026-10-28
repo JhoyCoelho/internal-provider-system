@@ -115,6 +115,15 @@ body {
   z-index: 3 !important;
 }
 
+.location-picker-map .leaflet-map-pane,
+.location-picker-map .leaflet-tile-pane,
+.location-picker-map .leaflet-overlay-pane,
+.location-picker-map .leaflet-marker-pane,
+.location-picker-map .leaflet-interactive,
+.location-picker-map .leaflet-marker-icon {
+  cursor: crosshair !important;
+}
+
 .fixed.inset-0 > section > div[class*="sm:grid-cols-2"] > div.rounded-xl {
   display: flex;
   min-height: 190px;
