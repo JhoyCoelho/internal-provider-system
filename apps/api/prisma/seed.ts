@@ -161,6 +161,16 @@ async function main() {
     { categoria: 'EPIS', pergunta: 'Camisa antichamas', tipoResposta: TipoRespostaChecklist.OK },
     { categoria: 'EPIS', pergunta: 'Cinto para trabalho em altura', tipoResposta: TipoRespostaChecklist.OK },
     { categoria: 'EPIS', pergunta: 'Talabarte', tipoResposta: TipoRespostaChecklist.OK },
+    { categoria: 'CELULAR_CORPORATIVO', pergunta: 'Tela e display', tipoResposta: TipoRespostaChecklist.OK },
+    { categoria: 'CELULAR_CORPORATIVO', pergunta: 'Carcaça e bordas', tipoResposta: TipoRespostaChecklist.OK },
+    { categoria: 'CELULAR_CORPORATIVO', pergunta: 'Câmeras frontal e traseira', tipoResposta: TipoRespostaChecklist.OK },
+    { categoria: 'CELULAR_CORPORATIVO', pergunta: 'Botões físicos', tipoResposta: TipoRespostaChecklist.OK },
+    { categoria: 'CELULAR_CORPORATIVO', pergunta: 'Conectores e portas', tipoResposta: TipoRespostaChecklist.OK },
+    { categoria: 'CELULAR_CORPORATIVO', pergunta: 'Carregador e cabo USB', tipoResposta: TipoRespostaChecklist.OK },
+    { categoria: 'CELULAR_CORPORATIVO', pergunta: 'Sistema', tipoResposta: TipoRespostaChecklist.OK },
+    { categoria: 'CELULAR_CORPORATIVO', pergunta: 'Bateria', tipoResposta: TipoRespostaChecklist.OK },
+    { categoria: 'CELULAR_CORPORATIVO', pergunta: 'Áudio', tipoResposta: TipoRespostaChecklist.OK },
+    { categoria: 'CELULAR_CORPORATIVO', pergunta: 'Conectividade', tipoResposta: TipoRespostaChecklist.OK },
   ];
 
   for (const template of templates) {

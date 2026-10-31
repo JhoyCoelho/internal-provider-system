@@ -6,7 +6,7 @@ import { apiFetch } from '../../lib/api';
 import { useAuth } from '../../providers/auth-provider';
 import { usePlatformTheme } from '../../providers/platform-theme-provider';
 
-type Category = 'FERRAMENTAS' | 'VEICULO' | 'EPIS';
+type Category = 'FERRAMENTAS' | 'VEICULO' | 'EPIS' | 'CELULAR_CORPORATIVO';
 type Template = { id: string; categoria: string; pergunta: string; tipoResposta: 'OK' | 'NAO_CONFORME' | 'TEXTO' };
 type Pending = { id: string; categoria: Category; status: 'PENDENTE' | 'EM_ATRASO' | 'PREENCHIDO' | 'APROVADO' | 'REPROVADO' | 'PENDENTE_APROVACAO'; dataPrevista: string | null; janela: 'INICIO_EXPEDIENTE' | 'FIM_EXPEDIENTE'; canFillNow: boolean; requiresJustification: boolean };
 type Answer = { respostaTipo: 'OK' | 'NAO_CONFORME' | 'TEXTO'; valorTexto: string; valorBooleano: boolean | null };
@@ -44,6 +44,7 @@ const categories: { key: Category; label: string }[] = [
   { key: 'FERRAMENTAS', label: 'Ferramentas' },
   { key: 'VEICULO', label: 'Veículo' },
   { key: 'EPIS', label: 'EPIs' },
+  { key: 'CELULAR_CORPORATIVO', label: 'Celular Corporativo' },
 ];
 const windowLabels = { INICIO_EXPEDIENTE: 'Início do expediente · 08:00–08:30', FIM_EXPEDIENTE: 'Fim do expediente · 17:45–18:30' };
 

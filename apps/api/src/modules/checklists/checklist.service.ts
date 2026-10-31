@@ -19,7 +19,7 @@ export type ChecklistAnswerInput = {
   itemCritico?: boolean;
 };
 
-const checklistCategories = ['FERRAMENTAS', 'VEICULO', 'EPIS'];
+const checklistCategories = ['FERRAMENTAS', 'VEICULO', 'EPIS', 'CELULAR_CORPORATIVO'];
 const checklistWindows = [
   { code: JanelaChecklist.INICIO_EXPEDIENTE, startMinute: 8 * 60, endMinute: 8 * 60 + 30 },
   { code: JanelaChecklist.FIM_EXPEDIENTE, startMinute: 17 * 60 + 45, endMinute: 18 * 60 + 30 },
